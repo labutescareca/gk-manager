@@ -1,18 +1,3 @@
-import sys
-import subprocess
-
-# --- AUTO-INSTALAÇÃO DE BIBLIOTECAS (Correção de Erros) ---
-try:
-    import google.oauth2
-    import googleapiclient
-except ImportError:
-    import streamlit as st
-    st.warning("⚠️ A instalar bibliotecas da Google em falta... Aguarda um momento.")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "google-api-python-client", "google-auth", "google-auth-oauthlib", "google-auth-httplib2"])
-    st.success("Bibliotecas instaladas! Por favor reinicia a app.")
-    st.stop()
-# -----------------------------------------------------------
-
 import streamlit as st
 import sqlite3
 import pandas as pd
@@ -33,9 +18,9 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 
 # ==========================================
-# 1. CONFIGURAÇÃO E GOOGLE DRIVE SYNC (V44)
+# 1. CONFIGURAÇÃO E GOOGLE DRIVE (V45)
 # ==========================================
-st.set_page_config(page_title="GK Manager Pro V44", layout="wide", page_icon="🧤")
+st.set_page_config(page_title="GK Manager Pro V45", layout="wide", page_icon="🧤")
 
 # Nome do ficheiro da base de dados
 DB_FILE = 'gk_master_v38.db'
@@ -58,7 +43,11 @@ def get_drive_service():
 def sync_download_db():
     """Ao iniciar, tenta baixar a versão mais recente do Drive."""
     service = get_drive_service()
-    folder_id = st.secrets["drive"]["folder_id"] if "drive" in st.secrets else None
+    # Verifica se a chave 'drive' existe nos segredos
+    if "drive" in st.secrets:
+        folder_id = st.secrets["drive"]["folder_id"]
+    else:
+        folder_id = None
     
     if service and folder_id:
         try:
@@ -79,18 +68,23 @@ def sync_download_db():
                 # Guarda localmente
                 with open(DB_FILE, "wb") as f:
                     f.write(fh.getbuffer())
-                print("Base de dados sincronizada do Drive com sucesso.")
+                print("✅ Base de dados sincronizada do Drive com sucesso.")
+            else:
+                print("⚠️ Ficheiro não encontrado no Drive. A usar versão local.")
         except Exception as e:
-            print(f"Aviso: Não foi possível baixar do Drive (usando versão local). Erro: {e}")
+            print(f"Erro Sync Download: {e}")
 
 def backup_to_drive():
-    """Envia a base de dados local para o Google Drive."""
+    """ATUALIZA a base de dados no Google Drive (Não cria novos para evitar erro 403)."""
     service = get_drive_service()
-    folder_id = st.secrets["drive"]["folder_id"] if "drive" in st.secrets else None
+    if "drive" in st.secrets:
+        folder_id = st.secrets["drive"]["folder_id"]
+    else:
+        folder_id = None
     
     if service and folder_id and os.path.exists(DB_FILE):
         try:
-            # Verifica se já existe para atualizar
+            # 1. Encontrar o ficheiro existente
             query = f"'{folder_id}' in parents and name = '{DB_FILE}' and trashed = false"
             results = service.files().list(q=query, fields="files(id)").execute()
             files = results.get('files', [])
@@ -98,18 +92,17 @@ def backup_to_drive():
             media = MediaFileUpload(DB_FILE, mimetype='application/x-sqlite3', resumable=True)
             
             if files:
-                # Atualiza o existente
+                # 2. ATUALIZAR (Isto funciona porque o ficheiro é teu!)
                 file_id = files[0]['id']
                 service.files().update(fileId=file_id, media_body=media).execute()
-                st.toast("✅ Backup automático no Drive concluído!", icon="☁️")
+                st.toast("✅ Backup Cloud: Atualizado com sucesso!", icon="☁️")
             else:
-                # Cria novo
-                file_metadata = {'name': DB_FILE, 'parents': [folder_id]}
-                service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-                st.toast("✅ Backup automático no Drive concluído!", icon="☁️")
+                # 3. ERRO SE NÃO EXISTIR (Para evitar o erro 403 de Quota)
+                st.error("⚠️ ERRO CRÍTICO: Não encontrei o ficheiro 'gk_master_v38.db' na tua pasta do Google Drive.")
+                st.info("👉 Solução: Faz upload manual desse ficheiro para a pasta do Drive uma vez. Depois o sistema já consegue atualizar.")
                 
         except Exception as e:
-            st.error(f"⚠️ Erro ao fazer backup no Drive: {e}")
+            st.error(f"⚠️ Erro no Backup: {e}")
 
 # Tenta sincronizar ao arrancar a app (uma vez por sessão)
 if 'drive_synced' not in st.session_state:
@@ -167,31 +160,22 @@ def check_db_updates():
                     id INTEGER PRIMARY KEY, 
                     user_id TEXT, date TEXT, opponent TEXT, gk_id INTEGER, goals_conceded INTEGER, saves INTEGER, result TEXT, report TEXT, rating INTEGER, 
                     
-                    -- BLOQUEIOS (6)
                     db_bloq_sq_rast INTEGER, db_bloq_sq_med INTEGER, db_bloq_sq_alt INTEGER, db_bloq_cq_rast INTEGER, db_bloq_cq_med INTEGER, db_bloq_cq_alt INTEGER, 
                     
-                    -- RECEÇÕES (6)
                     db_rec_sq_med INTEGER, db_rec_sq_alt INTEGER, db_rec_cq_rast INTEGER, db_rec_cq_med INTEGER, db_rec_cq_alt INTEGER, db_rec_cq_varr INTEGER, 
                     
-                    -- DESVIOS (10)
                     db_desv_sq_pe INTEGER, db_desv_sq_mfr INTEGER, db_desv_sq_mlat INTEGER, db_desv_sq_a1 INTEGER, db_desv_sq_a2 INTEGER, db_desv_cq_varr INTEGER, db_desv_cq_r1 INTEGER, db_desv_cq_r2 INTEGER, db_desv_cq_a1 INTEGER, db_desv_cq_a2 INTEGER, 
                     
-                    -- EXTENSÃO E VOO (7)
                     db_ext_rec INTEGER, db_ext_desv_1 INTEGER, db_ext_desv_2 INTEGER, db_voo_rec INTEGER, db_voo_desv_1 INTEGER, db_voo_desv_2 INTEGER, db_voo_desv_mc INTEGER, 
                     
-                    -- CONTROLO DO ESPAÇO (4)
                     de_cabeca INTEGER, de_carrinho INTEGER, de_alivio INTEGER, de_rececao INTEGER, 
                     
-                    -- DUELOS (4)
                     duelo_parede INTEGER, duelo_abafo INTEGER, duelo_estrela INTEGER, duelo_frontal INTEGER, 
                     
-                    -- DISTRIBUIÇÃO (10)
                     pa_curto_1 INTEGER, pa_curto_2 INTEGER, pa_longo_1 INTEGER, pa_longo_2 INTEGER, dist_curta_mao INTEGER, dist_longa_mao INTEGER, dist_picada_mao INTEGER, dist_volley INTEGER, dist_curta_pe INTEGER, dist_longa_pe INTEGER, 
                     
-                    -- CRUZAMENTOS (4)
                     cruz_rec_alta INTEGER, cruz_soco_1 INTEGER, cruz_soco_2 INTEGER, cruz_int_rast INTEGER,
                     
-                    -- ESQUEMAS TÁTICOS (3)
                     eto_pb_curto INTEGER, eto_pb_medio INTEGER, eto_pb_longo INTEGER
                     )''')
     
@@ -211,7 +195,7 @@ def check_db_updates():
     c.execute('''CREATE TABLE IF NOT EXISTS library_files (
                     id INTEGER PRIMARY KEY, folder_id INTEGER, name TEXT, type TEXT, content BLOB, link TEXT, description TEXT)''')
 
-    # --- ATUALIZAÇÕES AUTOMÁTICAS (MIGRAÇÕES) ---
+    # --- MIGRAÇÕES ---
     try: c.execute("ALTER TABLE matches ADD COLUMN match_type TEXT")
     except: pass
     try: c.execute("ALTER TABLE sessions ADD COLUMN status TEXT")
@@ -265,6 +249,7 @@ def create_training_pdf(user, session_info, athletes, drills_config, drills_deta
     pdf.cell(0, 10, txt=safe_text(f"Foco: {session_info['title']} ({status_txt})"), ln=1, align='L')
     pdf.ln(5)
     
+    # Presenças
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, safe_text("Lista de Presenças"), ln=1)
     pdf.set_font("Arial", 'B', 10)
@@ -283,6 +268,7 @@ def create_training_pdf(user, session_info, athletes, drills_config, drills_deta
     else: pdf.cell(0, 10, safe_text("Sem atletas registados"), 1, 1)
     pdf.ln(10)
     
+    # Exercícios
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(0, 10, safe_text("Plano de Exercícios"), ln=1, align='C')
@@ -346,7 +332,7 @@ if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'username' not in st.session_state: st.session_state['username'] = ''
 
 def login_page():
-    st.title("🔐 GK Manager Pro")
+    st.title("🔐 GK Manager Pro V45")
     menu = ["Login", "Criar Conta"]
     choice = st.selectbox("Menu", menu)
     if choice == "Login":
@@ -385,8 +371,8 @@ def main_app():
         ["Dashboard Geral", 
          "Gestão Semanal", 
          "Estatísticas & Presenças", 
-         "Scouting & Adversários", 
-         "Biblioteca de Documentos", 
+         "Escouting & Adversários", 
+         "Biblioteca Documentos", 
          "Relatórios & Avaliações", 
          "Evolução do Atleta", 
          "Centro de Jogo", 
@@ -474,6 +460,7 @@ def main_app():
                             icon = "🟢"
                     
                     with st.expander(f"{icon} {d_name} ({d_str}) {header_extra}"):
+                        # 1. PDF e Presenças (Apenas para Treinos Ativos)
                         if not sess.empty and sess.iloc[0]['type'] == 'Treino' and sess.iloc[0].get('status') != 'Cancelado':
                             col_pdf, _ = st.columns([1,3])
                             with col_pdf:
@@ -494,6 +481,7 @@ def main_app():
                                     except: st.error("Erro PDF")
                             
                             st.markdown("---")
+                            st.markdown("#### 🙋‍♂️ Presenças")
                             conn_p = get_db_connection()
                             all_gks = pd.read_sql_query("SELECT id, name FROM goalkeepers WHERE user_id=?", conn_p, params=(user,))
                             sess_id = int(sess.iloc[0]['id'])
@@ -515,6 +503,7 @@ def main_app():
                                     st.success("Atualizado!")
                             st.markdown("---")
 
+                        # 2. Formulário de Planeamento
                         with st.form(f"f_{d_str}"):
                             c_conf1, c_conf2 = st.columns(2)
                             prev_t = sess.iloc[0]['type'] if not sess.empty else "Treino"
@@ -524,6 +513,7 @@ def main_app():
                             type_d = c_conf1.selectbox("Tipo", ["Treino", "Jogo", "Descanso"], index=["Treino", "Jogo", "Descanso"].index(prev_t), key=f"tp_{d_str}")
                             status_d = c_conf2.selectbox("Estado", ["Realizado", "Cancelado"], index=["Realizado", "Cancelado"].index(prev_s), key=f"st_{d_str}")
                             
+                            # Campos de Jogo
                             opp_val, time_val, loc_val = "", time(15,0), "Casa"
                             if not sess.empty:
                                 opp_val = sess.iloc[0].get('opponent', '')
@@ -628,8 +618,8 @@ def main_app():
             conn.close()
 
     # --- 3. ESCOUTING ---
-    elif menu == "Scouting & Adversários":
-        st.header("🕵️ Scouting de Adversários")
+    elif menu == "Escouting & Adversários":
+        st.header("🕵️ Escouting de Adversários")
         conn = get_db_connection()
         opps = pd.read_sql_query("SELECT * FROM opponents WHERE user_id=?", conn, params=(user,))
         conn.close()
@@ -838,7 +828,7 @@ def main_app():
 
     # --- 7. CENTRO DE JOGO ---
     elif menu == "Centro de Jogo":
-        st.header("🏟️ Ficha de Jogo")
+        st.header("🏟️ Ficha de Jogo (Completa)")
         conn = get_db_connection()
         games = pd.read_sql_query("SELECT start_date, title FROM sessions WHERE user_id=? AND type='Jogo' ORDER BY start_date DESC", conn, params=(user,))
         gks = pd.read_sql_query("SELECT id, name FROM goalkeepers WHERE user_id=?", conn, params=(user,))
@@ -857,7 +847,7 @@ def main_app():
                 gk = c_top2.selectbox("Guarda-Redes Titular", gks['name'].tolist() if not gks.empty else [])
                 
                 c1, c2, c3, c4 = st.columns(4)
-                res = c1.text_input("Resultado")
+                res = c1.text_input("Resultado (ex: 2-1)")
                 gls = c2.number_input("Golos Sofridos", 0, 20)
                 svs = c3.number_input("Defesas Realizadas", 0, 50)
                 rt = c4.slider("Avaliação (1-10)", 1, 10, 5)
@@ -924,9 +914,9 @@ def main_app():
                     du_par = st.number_input("Parede", 0, 20)
                     du_aba = st.number_input("Abafo", 0, 20)
                     du_est = st.number_input("Estrela", 0, 20)
-                    du_fro = st.number_input("Ataque Frontal", 0, 20)
+                    du_fro = st.number_input("Frontal", 0, 20)
 
-                with st.expander("🎯 7. DISTRIBUIÇÃO"):
+                with st.expander("🎯 7. DISTRIBUIÇÃO (TÁTICA)"):
                     pa_c1 = st.number_input("Passe Curto 1T", 0, 50)
                     pa_c2 = st.number_input("Passe Curto 2T", 0, 50)
                     pa_l1 = st.number_input("Passe Longo 1T", 0, 50)
@@ -1076,17 +1066,17 @@ def main_app():
                 b1,b2,b3,b4,b5=st.columns(5)
                 ht=b1.number_input("Altura", 0.0, 250.0, value=d_h)
                 ws=b2.number_input("Envergadura", 0.0, 250.0, value=d_w)
-                al=b3.number_input("Braço Esquerdo", 0.0, 150.0, value=d_al)
-                ar=b4.number_input("Braço Direito", 0.0, 150.0, value=d_ar)
+                al=b3.number_input("Braço E", 0.0, 150.0, value=d_al)
+                ar=b4.number_input("Braço D", 0.0, 150.0, value=d_ar)
                 gl=b5.text_input("Luva", value=d_gl)
                 st.subheader("3. Saltos")
                 j1,j2,j3=st.columns(3)
-                jf2=j1.number_input("Frontal 2 Pés", 0.0, value=d_jf2)
-                jfl=j2.number_input("Frontal Pé Esquerdo", 0.0, value=d_jfl)
-                jfr=j3.number_input("Frontal Pé Direito", 0.0, value=d_jfr)
+                jf2=j1.number_input("Frontal 2", 0.0, value=d_jf2)
+                jfl=j2.number_input("Frontal E", 0.0, value=d_jfl)
+                jfr=j3.number_input("Frontal D", 0.0, value=d_jfr)
                 j4,j5=st.columns(2)
-                jll=j4.number_input("Lateral Esquerdo", 0.0, value=d_jll)
-                jlr=j5.number_input("Lateral Direito", 0.0, value=d_jlr)
+                jll=j4.number_input("Lateral E", 0.0, value=d_jll)
+                jlr=j5.number_input("Lateral D", 0.0, value=d_jlr)
                 st.subheader("4. Testes")
                 t1,t2,t3=st.columns(3)
                 tr=t1.text_input("Resistência", value=d_tr)
@@ -1107,7 +1097,7 @@ def main_app():
 
     # --- 10. EXERCÍCIOS ---
     elif menu == "Exercícios":
-        st.header("Biblioteca Técnica")
+        st.header("⚽ Biblioteca Técnica")
         if 'edit_drill_id' not in st.session_state: st.session_state['edit_drill_id'] = None
         conn = get_db_connection()
         all_ex = pd.read_sql_query("SELECT * FROM exercises WHERE user_id=?", conn, params=(user,))
