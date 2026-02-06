@@ -3,3 +3,5 @@ pandas
 fpdf
 streamlit-calendar
 Pillow
+google-api-python-client
+google-auth
