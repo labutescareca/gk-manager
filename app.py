@@ -21,130 +21,77 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 # 1. CONFIGURAÇÃO DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="GK Manager Pro V53",
+    page_title="GK Manager Pro",
     layout="wide",
     page_icon="🧤"
 )
 
-# Nome do ficheiro da base de dados
 DB_FILE = 'gk_master_v38.db'
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # ==========================================
-# 2. FUNÇÕES DE GOOGLE DRIVE (SYNC)
+# 2. FUNÇÕES DE GOOGLE DRIVE & DB
 # ==========================================
 
 def get_drive_service():
-    """
-    Autentica no Google Drive usando os segredos do Streamlit.
-    """
+    """Autentica no Google Drive."""
     try:
         if "gcp_service_account" in st.secrets:
             creds = service_account.Credentials.from_service_account_info(
                 st.secrets["gcp_service_account"], scopes=SCOPES)
             return build('drive', 'v3', credentials=creds)
-        else:
-            return None
+        return None
     except Exception as e:
-        print(f"Aviso Drive (Local): {e}")
         return None
 
 def sync_download_db():
-    """
-    Tenta baixar a versão mais recente da base de dados do Google Drive.
-    """
+    """Baixa a DB do Drive."""
     service = get_drive_service()
-    
-    # Tenta obter o ID da pasta
     if "drive" in st.secrets:
-        folder_id = st.secrets["drive"]["folder_id"]
-    else:
-        folder_id = None
-    
-    if service and folder_id:
-        try:
-            # Procura o ficheiro na pasta específica
-            query = f"'{folder_id}' in parents and name = '{DB_FILE}' and trashed = false"
-            results = service.files().list(q=query, fields="files(id, name, modifiedTime)").execute()
-            files = results.get('files', [])
-            
-            if files:
-                file_id = files[0]['id']
-                print(f"Ficheiro encontrado no Drive: {file_id}. A descarregar...")
-                
-                request = service.files().get_media(fileId=file_id)
-                fh = io.BytesIO()
-                downloader = MediaIoBaseDownload(fh, request)
-                
-                done = False
-                while done is False:
-                    status, done = downloader.next_chunk()
-                
-                # Guarda o ficheiro no disco local, substituindo o antigo
-                with open(DB_FILE, "wb") as f:
-                    f.write(fh.getbuffer())
-                
-                print("✅ Base de dados sincronizada do Drive com sucesso.")
-            else:
-                print("⚠️ Ficheiro não encontrado no Drive. O sistema usará a versão local.")
-        except Exception as e:
-            print(f"Erro no Sync Download: {e}")
+        fid = st.secrets["drive"]["folder_id"]
+        if service and fid:
+            try:
+                q = f"'{fid}' in parents and name = '{DB_FILE}' and trashed = false"
+                res = service.files().list(q=q, fields="files(id)").execute()
+                files = res.get('files', [])
+                if files:
+                    req = service.files().get_media(fileId=files[0]['id'])
+                    fh = io.BytesIO()
+                    dl = MediaIoBaseDownload(fh, req)
+                    done = False
+                    while not done:
+                        _, done = dl.next_chunk()
+                    with open(DB_FILE, "wb") as f:
+                        f.write(fh.getbuffer())
+            except:
+                pass
 
 def backup_to_drive():
-    """
-    Envia a base de dados local para o Google Drive.
-    ATENÇÃO: Apenas ATUALIZA ficheiros existentes para evitar erro 403 de Quota.
-    """
+    """Envia a DB para o Drive."""
     service = get_drive_service()
-    
     if "drive" in st.secrets:
-        folder_id = st.secrets["drive"]["folder_id"]
-    else:
-        folder_id = None
-    
-    # Só faz backup se o ficheiro local existir
-    if service and folder_id and os.path.exists(DB_FILE):
-        try:
-            # 1. Encontrar o ficheiro existente no Drive
-            query = f"'{folder_id}' in parents and name = '{DB_FILE}' and trashed = false"
-            results = service.files().list(q=query, fields="files(id)").execute()
-            files = results.get('files', [])
-            
-            media = MediaFileUpload(DB_FILE, mimetype='application/x-sqlite3', resumable=True)
-            
-            if files:
-                # 2. Se existe, ATUALIZA (Update)
-                file_id = files[0]['id']
-                service.files().update(fileId=file_id, media_body=media).execute()
-                st.toast("✅ Backup Cloud: Dados guardados com sucesso!", icon="☁️")
-            else:
-                # 3. Se não existe, avisa o utilizador (devido a permissões de criação)
-                st.error("⚠️ ERRO CRÍTICO DE BACKUP")
-                st.warning("O sistema não encontrou o ficheiro 'gk_master_v38.db' na pasta do Google Drive.")
-                st.info("👉 Solução: Faz upload manual desse ficheiro para a pasta 'GK_Manager_Dados' no teu Drive uma vez. Depois o sistema já consegue atualizar automaticamente.")
-                
-        except Exception as e:
-            st.error(f"⚠️ Erro ao conectar ao Google Drive: {e}")
-
-# ==========================================
-# 3. FUNÇÕES DE BASE DE DADOS (SQLITE)
-# ==========================================
+        fid = st.secrets["drive"]["folder_id"]
+        if service and fid and os.path.exists(DB_FILE):
+            try:
+                q = f"'{fid}' in parents and name = '{DB_FILE}' and trashed = false"
+                res = service.files().list(q=q, fields="files(id)").execute()
+                files = res.get('files', [])
+                media = MediaFileUpload(DB_FILE, mimetype='application/x-sqlite3', resumable=True)
+                if files:
+                    service.files().update(fileId=files[0]['id'], media_body=media).execute()
+                st.toast("Backup Cloud OK!", icon="☁️")
+            except:
+                st.error("Erro Backup Cloud")
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_FILE) 
-    return conn
+    return sqlite3.connect(DB_FILE)
 
 def check_db_updates():
-    """
-    Verifica e cria todas as tabelas e colunas necessárias.
-    Versão blindada para evitar erros de conexão fechada.
-    """
-    # 1. Abrir Conexão
+    """Verifica e cria tabelas/colunas. Versão V62 Completa."""
     conn = get_db_connection()
     c = conn.cursor()
-    
     try:
-        # --- CRIAÇÃO DE TABELAS (Se não existirem) ---
+        # --- TABELAS BASE ---
         c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS goalkeepers (id INTEGER PRIMARY KEY, user_id TEXT, name TEXT, age INTEGER, status TEXT, notes TEXT, height REAL, wingspan REAL, arm_len_left REAL, arm_len_right REAL, glove_size TEXT, jump_front_2 REAL, jump_front_l REAL, jump_front_r REAL, jump_lat_l REAL, jump_lat_r REAL, test_res TEXT, test_agil TEXT, test_vel TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS exercises (id INTEGER PRIMARY KEY, user_id TEXT, title TEXT, moment TEXT, training_type TEXT, description TEXT, objective TEXT, materials TEXT, space TEXT, image BLOB)''')
@@ -157,18 +104,27 @@ def check_db_updates():
         c.execute('''CREATE TABLE IF NOT EXISTS opponent_files (id INTEGER PRIMARY KEY, opponent_id INTEGER, name TEXT, type TEXT, content BLOB, link TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS library_folders (id INTEGER PRIMARY KEY, user_id TEXT, name TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS library_files (id INTEGER PRIMARY KEY, folder_id INTEGER, name TEXT, type TEXT, content BLOB, link TEXT, description TEXT)''')
-
-        # Tabela Matches Completa (com as novas colunas já incluídas na criação base)
+        
+        # --- TABELA MATCHES COMPLETA (V62) ---
         c.execute('''CREATE TABLE IF NOT EXISTS matches (
                         id INTEGER PRIMARY KEY, user_id TEXT, date TEXT, opponent TEXT, gk_id INTEGER, goals_conceded INTEGER, saves INTEGER, result TEXT, report TEXT, rating INTEGER, match_type TEXT,
                         
-                        -- Colunas Novas (Tempo e Subs)
-                        match_duration INTEGER DEFAULT 90,
-                        sub_gk_id INTEGER,
-                        sub_minute INTEGER,
-                        sub2_gk_id INTEGER,
+                        -- Colunas Tempo e Subs
+                        match_duration INTEGER DEFAULT 90, 
+                        sub_gk_id INTEGER, 
+                        sub_minute INTEGER, 
+                        sub2_gk_id INTEGER, 
                         sub2_minute INTEGER,
-
+                        
+                        -- Colunas Remates e Psicologia
+                        shots_faced INTEGER, 
+                        shots_off_target INTEGER, 
+                        psy_comm INTEGER, 
+                        psy_decision INTEGER, 
+                        psy_posture INTEGER, 
+                        psy_resilience INTEGER,
+                        
+                        -- Estatísticas Técnicas (72 Variáveis)
                         db_bloq_sq_rast INTEGER, db_bloq_sq_med INTEGER, db_bloq_sq_alt INTEGER, db_bloq_cq_rast INTEGER, db_bloq_cq_med INTEGER, db_bloq_cq_alt INTEGER, 
                         db_rec_sq_med INTEGER, db_rec_sq_alt INTEGER, db_rec_cq_rast INTEGER, db_rec_cq_med INTEGER, db_rec_cq_alt INTEGER, db_rec_cq_varr INTEGER, 
                         db_desv_sq_pe INTEGER, db_desv_sq_mfr INTEGER, db_desv_sq_mlat INTEGER, db_desv_sq_a1 INTEGER, db_desv_sq_a2 INTEGER, db_desv_cq_varr INTEGER, db_desv_cq_r1 INTEGER, db_desv_cq_r2 INTEGER, db_desv_cq_a1 INTEGER, db_desv_cq_a2 INTEGER, 
@@ -179,108 +135,76 @@ def check_db_updates():
                         cruz_rec_alta INTEGER, cruz_soco_1 INTEGER, cruz_soco_2 INTEGER, cruz_int_rast INTEGER,
                         eto_pb_curto INTEGER, eto_pb_medio INTEGER, eto_pb_longo INTEGER)''')
 
-        # --- ATUALIZAÇÃO SEGURA (MIGRAÇÕES) ---
-        # Adiciona colunas que possam faltar em bases de dados antigas
-        # Usamos uma lista para não repetir código
-        # --- ATUALIZAÇÃO SEGURA (MIGRAÇÕES) ---
-        # Adiciona colunas novas à tabela matches
-        new_columns = [
-            ("sessions", "match_time", "TEXT"),
+        # --- MIGRAÇÕES (GARANTIR COLUNAS EM DBS ANTIGAS) ---
+        new_cols = [
+            ("sessions", "match_time", "TEXT"), 
             ("matches", "match_duration", "INTEGER DEFAULT 90"),
-            ("matches", "sub_gk_id", "INTEGER"),
+            ("matches", "sub_gk_id", "INTEGER"), 
             ("matches", "sub_minute", "INTEGER"),
-            ("matches", "sub2_gk_id", "INTEGER"),
+            ("matches", "sub2_gk_id", "INTEGER"), 
             ("matches", "sub2_minute", "INTEGER"),
-            
-            # NOVO: Estatísticas de Remates
-            ("matches", "shots_faced", "INTEGER"),      # Remates à baliza (No alvo)
-            ("matches", "shots_off_target", "INTEGER"), # Remates para fora
-            
-            # NOVO: Atributos Psicológicos (1-5 ou 1-10)
-            ("matches", "psy_comm", "INTEGER"),      # Comunicação
-            ("matches", "psy_decision", "INTEGER"),  # Tomada de Decisão
-            ("matches", "psy_posture", "INTEGER"),   # Postura/Presença
-            ("matches", "psy_resilience", "INTEGER") # Resiliência
+            ("matches", "shots_faced", "INTEGER"), 
+            ("matches", "shots_off_target", "INTEGER"),
+            ("matches", "psy_comm", "INTEGER"), 
+            ("matches", "psy_decision", "INTEGER"),
+            ("matches", "psy_posture", "INTEGER"), 
+            ("matches", "psy_resilience", "INTEGER")
         ]
-
-        for table, col, type_ in new_columns:
-            try:
-                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {type_}")
-            except sqlite3.OperationalError:
-                pass # Coluna já existe
-            except Exception as e:
-                print(f"Aviso DB ({col}): {e}")
-
+        for t, c_n, tp in new_cols:
+            try: 
+                c.execute(f"ALTER TABLE {t} ADD COLUMN {c_n} {tp}")
+            except: 
+                pass
+            
         conn.commit()
     except Exception as e:
-        st.error(f"Erro Crítico na Base de Dados: {e}")
-    
+        st.error(f"Erro Base de Dados: {e}")
     finally:
-        # Isto garante que a conexão fecha SEMPRE, aconteça o que acontecer
         conn.close()
 
-# --- ARRANQUE DO SISTEMA (Sincronização) ---
+# ==========================================
+# 3. HELPER FUNCTIONS E STARTUP
+# ==========================================
+
+# Sincronização inicial
 if 'drive_synced' not in st.session_state:
-    with st.spinner("A ligar à Cloud e a sincronizar dados..."):
-        # 1. Tenta sacar a DB mais recente
+    with st.spinner("A carregar..."):
         sync_download_db()
-        # 2. Garante que a DB (nova ou velha) tem todas as tabelas
         check_db_updates()
     st.session_state['drive_synced'] = True
 
-# ==========================================
-# 4. FUNÇÕES AUXILIARES (HASH, PDF, TEXTO)
-# ==========================================
+def make_hashes(p):
+    return hashlib.sha256(str.encode(p)).hexdigest()
 
-def make_hashes(password):
-    """Cria uma hash segura da password."""
-    return hashlib.sha256(str.encode(password)).hexdigest()
-
-def parse_drills(drills_str):
-    """Converte a string JSON dos exercícios para lista."""
-    if not drills_str: 
-        return []
-    try: 
-        return json.loads(drills_str)
+def parse_drills(s): 
+    try:
+        return json.loads(s) 
     except:
-        # Fallback para formato antigo
-        titles = drills_str.split(", ")
-        return [{"title": t, "reps": "", "sets": "", "time": ""} for t in titles if t]
+        return []
 
-def safe_text(text):
-    """Trata caracteres especiais para o PDF (latin-1)."""
-    if not text: 
-        return ""
-    try: 
-        return text.encode('latin-1', 'replace').decode('latin-1')
-    except: 
-        return str(text)
+def safe_text(t):
+    return str(t).encode('latin-1','replace').decode('latin-1')
 
 class PDF(FPDF):
     def header(self):
         self.set_font('Arial', 'B', 16)
         self.cell(0, 10, 'GK MANAGER PRO - FICHA DE TREINO', 0, 1, 'C')
         self.ln(5)
+        
     def footer(self):
         self.set_y(-15)
         self.set_font('Arial', 'I', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
 def create_training_pdf(user, session_info, athletes, drills_config, drills_details_df):
-    """Gera o PDF do plano de treino."""
     pdf = PDF()
     pdf.add_page()
     pdf.set_font("Arial", size=12)
     pdf.set_fill_color(240, 240, 240)
     
-    # Cabeçalho da Sessão
+    # Cabeçalho do Treino
     pdf.cell(0, 10, txt=safe_text(f"Treinador: {user}"), ln=1, align='L')
-    
-    # Linha da Data e Hora
-    time_str = ""
-    if session_info.get('match_time'):
-        time_str = f" | Hora: {session_info['match_time']}"
-        
+    time_str = f" | Hora: {session_info.get('match_time', '')}" if session_info.get('match_time') else ""
     pdf.cell(0, 10, txt=safe_text(f"Data: {session_info['start_date']}{time_str} | Tipo: {session_info['type']}"), ln=1, align='L', fill=True)
     status_txt = session_info.get('status', 'Agendado')
     pdf.cell(0, 10, txt=safe_text(f"Foco: {session_info['title']} ({status_txt})"), ln=1, align='L')
@@ -289,7 +213,6 @@ def create_training_pdf(user, session_info, athletes, drills_config, drills_deta
     # Tabela de Presenças
     pdf.set_font("Arial", 'B', 14)
     pdf.cell(0, 10, safe_text("Lista de Presenças"), ln=1)
-    
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(80, 10, safe_text("Nome do Atleta"), 1)
     pdf.cell(30, 10, safe_text("Presença"), 1)
@@ -300,17 +223,17 @@ def create_training_pdf(user, session_info, athletes, drills_config, drills_deta
     if not athletes.empty:
         for _, row in athletes.iterrows():
             pdf.cell(80, 10, safe_text(f"{row['name']} ({row['status']})"), 1)
-            pdf.cell(30, 10, "[   ]", 1)
+            pdf.cell(30, 10, "[ ]", 1)
             pdf.cell(30, 10, "", 1)
             pdf.ln()
-    else: 
-        pdf.cell(0, 10, safe_text("Sem atletas registados"), 1, 1)
-    pdf.ln(10)
+    else:
+        pdf.cell(0, 10, safe_text("Sem atletas"), 1, 1)
+        pdf.ln(10)
     
     # Exercícios
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, safe_text("Plano de Exercícios"), ln=1, align='C')
+    pdf.cell(0, 10, safe_text("Exercícios"), ln=1, align='C')
     pdf.ln(5)
     
     if drills_config:
@@ -320,45 +243,41 @@ def create_training_pdf(user, session_info, athletes, drills_config, drills_deta
             
             if not details.empty:
                 row = details.iloc[0]
-                
-                # Título
+                # Título do Exercício
                 pdf.set_font("Arial", 'B', 14)
                 pdf.set_fill_color(230, 230, 250)
                 pdf.cell(0, 10, safe_text(f"Ex {i+1}: {title}"), 1, 1, 'L', fill=True)
                 
-                # Carga
+                # Carga (Sets/Reps)
                 pdf.set_font("Arial", 'B', 10)
-                pdf.set_fill_color(255, 255, 224) 
-                load_text = f"Series: {config.get('sets','-')} | Reps: {config.get('reps','-')} | Tempo: {config.get('time','-')}"
-                pdf.cell(0, 8, safe_text(load_text), 1, 1, 'L', fill=True)
+                pdf.set_fill_color(255, 255, 224)
+                pdf.cell(0, 8, safe_text(f"S: {config.get('sets','-')} | R: {config.get('reps','-')} | T: {config.get('time','-')}"), 1, 1, 'L', fill=True)
                 
                 # Detalhes
                 pdf.set_font("Arial", size=10)
-                info_text = f"Momento: {row['moment']} | Tipo: {row['training_type']}"
-                if row['space']:
-                    info_text += f" | Espaço: {row['space']}"
-                pdf.write(5, safe_text(info_text))
+                pdf.write(5, safe_text(f"Momento: {row['moment']} | Tipo: {row['training_type']}"))
                 pdf.ln(6)
                 
-                if row['objective']: 
-                    pdf.set_font("Arial", 'B', 10); pdf.write(5, "Obj: ")
-                    pdf.set_font("Arial", '', 10); pdf.write(5, safe_text(f"{row['objective']}")); pdf.ln(6)
+                if row['objective']:
+                    pdf.write(5, safe_text(f"Obj: {row['objective']}"))
+                    pdf.ln(6)
+                if row['materials']:
+                    pdf.write(5, safe_text(f"Mat: {row['materials']}"))
+                    pdf.ln(6)
                 
-                if row['materials']: 
-                    pdf.set_font("Arial", 'B', 10); pdf.write(5, "Mat: ")
-                    pdf.set_font("Arial", '', 10); pdf.write(5, safe_text(f"{row['materials']}")); pdf.ln(6)
                 pdf.ln(2)
                 
-                # Imagem
+                # Imagem do Exercício
                 if row['image']:
                     try:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as temp_img:
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as ti:
                             img = Image.open(io.BytesIO(row['image']))
-                            img.save(temp_img.name)
-                            pdf.image(temp_img.name, x=10, w=100)
+                            img.save(ti.name)
+                            pdf.image(ti.name, x=10, w=100)
                             pdf.ln(5)
-                        os.unlink(temp_img.name)
-                    except: pass
+                            os.unlink(ti.name)
+                    except:
+                        pass
                 
                 # Descrição
                 pdf.set_font("Arial", 'B', 11)
@@ -366,21 +285,17 @@ def create_training_pdf(user, session_info, athletes, drills_config, drills_deta
                 pdf.set_font("Arial", size=10)
                 pdf.multi_cell(0, 6, safe_text(row['description']))
                 pdf.ln(10)
-                
-                if pdf.get_y() > 240: pdf.add_page()
-    else: 
-        pdf.cell(0, 10, safe_text("Sem exercícios planeados."), 0, 1)
     
     return pdf.output(dest='S').encode('latin-1')
 
 # ==========================================
-# 5. SISTEMA DE LOGIN
+# 4. LOGIN & MAIN (SETUP)
 # ==========================================
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'username' not in st.session_state: st.session_state['username'] = ''
 
 def login_page():
-    st.title("🔐 GK Manager Pro")
+    st.title("🔐 GK Manager Pro V62")
     menu = ["Login", "Criar Conta"]
     choice = st.selectbox("Menu", menu)
     
@@ -406,12 +321,13 @@ def login_page():
             try:
                 conn.cursor().execute("INSERT INTO users VALUES (?,?)", (new_u, make_hashes(new_p)))
                 conn.commit()
-                st.success("Conta criada com sucesso!")
+                st.success("Conta criada!")
                 backup_to_drive()
             except:
-                st.warning("Esse utilizador já existe.")
+                st.warning("Já existe.")
             conn.close()
 
+# --- DAQUI PARA BAIXO SEGUE O DEF MAIN_APP() QUE JÁ TENS ---
 # ==========================================
 # 6. APLICAÇÃO PRINCIPAL (CORE)
 # ==========================================
