@@ -318,6 +318,21 @@ def check_db_updates():
         c.execute("ALTER TABLE sessions ADD COLUMN match_time TEXT")
     except:
         pass # Coluna já existe
+    
+    # ... (código das tabelas que já lá tens) ...
+
+    # --- NOVO: COLUNAS PARA SUBSTITUIÇÃO E TEMPO ---
+    # Tenta adicionar as colunas se elas não existirem
+    try: c.execute("ALTER TABLE matches ADD COLUMN match_duration INTEGER DEFAULT 90")
+    except: pass
+    try: c.execute("ALTER TABLE matches ADD COLUMN sub_gk_id INTEGER")
+    except: pass
+    try: c.execute("ALTER TABLE matches ADD COLUMN sub_minute INTEGER")
+    except: pass
+
+    conn.commit()
+    conn.close()
+
 
     conn.commit()
     conn.close()
@@ -1280,8 +1295,9 @@ def main_app():
         else: st.warning("Crie atletas primeiro.")
 
     # --- 7. CENTRO DE JOGO (COMPLETO) ---
+    # --- 7. CENTRO DE JOGO (ATUALIZADO COM MINUTOS E SUBSTITUIÇÕES) ---
     elif menu == "Centro de Jogo":
-        st.header("🏟️ Ficha de Jogo")
+        st.header("🏟️ Ficha de Jogo (Completa)")
         conn = get_db_connection()
         games = pd.read_sql_query("SELECT start_date, title FROM sessions WHERE user_id=? AND type='Jogo' ORDER BY start_date DESC", conn, params=(user,))
         gks = pd.read_sql_query("SELECT id, name FROM goalkeepers WHERE user_id=?", conn, params=(user,))
@@ -1293,19 +1309,41 @@ def main_app():
             sel_date = sel_game.split(" | ")[0]
             
             st.markdown("---")
+            
+            # --- FORMULÁRIO DE DADOS ---
             with st.form("match_stats"):
                 st.subheader("Informação Base")
-                c_top1, c_top2 = st.columns(2)
-                match_type = c_top1.selectbox("Tipo de Jogo", ["Oficial", "Amigável"])
-                gk = c_top2.selectbox("Guarda-Redes Titular", gks['name'].tolist() if not gks.empty else [])
                 
+                # LINHA 1: TIPO, DURAÇÃO, GR TITULAR
+                c_top1, c_top2, c_top3 = st.columns(3)
+                match_type = c_top1.selectbox("Tipo de Jogo", ["Oficial", "Amigável"])
+                match_dur = c_top2.number_input("Duração (min)", value=90)
+                gk = c_top3.selectbox("GR Titular", gks['name'].tolist() if not gks.empty else [])
+                
+                # LINHA 2: SUBSTITUIÇÃO
+                has_sub = st.checkbox("Houve Substituição de GR?")
+                sub_id_val = None
+                sub_min_val = 0
+                
+                if has_sub:
+                    c_sub1, c_sub2 = st.columns(2)
+                    sub_opts = [g for g in gks['name'].tolist() if g != gk] # Remove o titular da lista
+                    gk_sub_name = c_sub1.selectbox("GR Suplente (Entrou)", sub_opts)
+                    sub_min_val = c_sub2.number_input("Minuto da Entrada", 1, match_dur, 45)
+                    # Buscar ID do suplente
+                    if not gks.empty:
+                        sub_id_val = int(gks[gks['name']==gk_sub_name].iloc[0]['id'])
+
+                st.divider()
+
+                # LINHA 3: RESULTADO E NOTA
                 c1, c2, c3, c4 = st.columns(4)
-                res = c1.text_input("Resultado")
+                res = c1.text_input("Resultado (ex: 2-1)")
                 gls = c2.number_input("Golos Sofridos", 0, 20)
                 svs = c3.number_input("Defesas Realizadas", 0, 50)
                 rt = c4.slider("Avaliação (1-10)", 1, 10, 5)
 
-                # --- 72 VARIÁVEIS ESTATÍSTICAS COMPLETAS ---
+                # --- 72 VARIÁVEIS ESTATÍSTICAS ---
                 with st.expander("🧱 1. DEFESA DE BALIZA: BLOQUEIOS"):
                     b1, b2 = st.columns(2)
                     with b1:
@@ -1367,9 +1405,9 @@ def main_app():
                     du_par = st.number_input("Parede", 0, 20)
                     du_aba = st.number_input("Abafo", 0, 20)
                     du_est = st.number_input("Estrela", 0, 20)
-                    du_fro = st.number_input("Ataque Frontal", 0, 20)
+                    du_fro = st.number_input("Frontal", 0, 20)
 
-                with st.expander("🎯 7. DISTRIBUIÇÃO"):
+                with st.expander("🎯 7. DISTRIBUIÇÃO (TÁTICA)"):
                     pa_c1 = st.number_input("Passe Curto 1T", 0, 50)
                     pa_c2 = st.number_input("Passe Curto 2T", 0, 50)
                     pa_l1 = st.number_input("Passe Longo 1T", 0, 50)
@@ -1398,43 +1436,103 @@ def main_app():
                     conn = get_db_connection()
                     gid = int(gks[gks['name']==gk].iloc[0]['id']) if not gks.empty else 0
                     c = conn.cursor()
+                    
+                    # Apagar anterior se existir para evitar duplicados
                     c.execute("DELETE FROM matches WHERE user_id=? AND date=?", (user, sel_date))
-                    vals = (user, sel_date, sel_game.split(" | ")[1], gid, gls, svs, res, rep, rt, match_type,
-                        bloq_sq_r, bloq_sq_m, bloq_sq_a, bloq_cq_r, bloq_cq_m, bloq_cq_a,
-                        rec_sq_m, rec_sq_a, rec_cq_r, rec_cq_m, rec_cq_a, rec_cq_v,
-                        desv_sq_p, desv_sq_mf, desv_sq_ml, desv_sq_a1, desv_sq_a2, 
-                        desv_cq_v, desv_cq_r1, desv_cq_r2, desv_cq_a1, desv_cq_a2,
-                        ext_rec, ext_d1, ext_d2, voo_rec, voo_d1, voo_d2, voo_dmc,
-                        de_cab, de_car, de_ali, de_rec, 
-                        du_par, du_aba, du_est, du_fro,
-                        pa_c1, pa_c2, pa_l1, pa_l2, di_cm, di_lm, di_pm, di_vo, di_cp, di_lp,
-                        cr_rec, cr_s1, cr_s2, cr_int,
-                        eto_pb_curto, eto_pb_medio, eto_pb_longo)
-                    placeholders = ",".join(["?"] * len(vals))
-                    c.execute(f'''INSERT INTO matches (id, user_id, date, opponent, gk_id, goals_conceded, saves, result, report, rating, match_type,
-                        db_bloq_sq_rast, db_bloq_sq_med, db_bloq_sq_alt, db_bloq_cq_rast, db_bloq_cq_med, db_bloq_cq_alt,
-                        db_rec_sq_med, db_rec_sq_alt, db_rec_cq_rast, db_rec_cq_med, db_rec_cq_alt, db_rec_cq_varr,
-                        db_desv_sq_pe, db_desv_sq_mfr, db_desv_sq_mlat, db_desv_sq_a1, db_desv_sq_a2, db_desv_cq_varr, db_desv_cq_r1, db_desv_cq_r2, db_desv_cq_a1, db_desv_cq_a2,
-                        db_ext_rec, db_ext_desv_1, db_ext_desv_2, db_voo_rec, db_voo_desv_1, db_voo_desv_2, db_voo_desv_mc,
-                        de_cabeca, de_carrinho, de_alivio, de_rececao,
-                        duelo_parede, duelo_abafo, duelo_estrela, duelo_frontal,
-                        pa_curto_1, pa_curto_2, pa_longo_1, pa_longo_2, dist_curta_mao, dist_longa_mao, dist_picada_mao, dist_volley, dist_curta_pe, dist_longa_pe,
-                        cruz_rec_alta, cruz_soco_1, cruz_soco_2, cruz_int_rast,
-                        eto_pb_curto, eto_pb_medio, eto_pb_longo) VALUES (NULL, {placeholders})''', vals)
-                    conn.commit(); conn.close(); backup_to_drive(); st.success("Ficha de Jogo Completa Guardada!"); st.rerun()
+                    
+                    # INSERÇÃO COM COLUNAS DE TEMPO E SUBSTITUIÇÃO
+                    # Nota: As interrogações (?) correspondem aos valores na variável 'vals'
+                    try:
+                        vals = (
+                            user, sel_date, sel_game.split(" | ")[1], gid, gls, svs, res, rep, rt, match_type,
+                            match_dur, sub_id_val, sub_min_val, # <--- NOVOS CAMPOS AQUI
+                            bloq_sq_r, bloq_sq_m, bloq_sq_a, bloq_cq_r, bloq_cq_m, bloq_cq_a,
+                            rec_sq_m, rec_sq_a, rec_cq_r, rec_cq_m, rec_cq_a, rec_cq_v,
+                            desv_sq_p, desv_sq_mf, desv_sq_ml, desv_sq_a1, desv_sq_a2, 
+                            desv_cq_v, desv_cq_r1, desv_cq_r2, desv_cq_a1, desv_cq_a2,
+                            ext_rec, ext_d1, ext_d2, voo_rec, voo_d1, voo_d2, voo_dmc,
+                            de_cab, de_car, de_ali, de_rec, 
+                            du_par, du_aba, du_est, du_fro,
+                            pa_c1, pa_c2, pa_l1, pa_l2, di_cm, di_lm, di_pm, di_vo, di_cp, di_lp,
+                            cr_rec, cr_s1, cr_s2, cr_int,
+                            eto_pb_curto, eto_pb_medio, eto_pb_longo
+                        )
+                        
+                        # Query SQL Completa
+                        c.execute(f'''INSERT INTO matches (
+                            id, user_id, date, opponent, gk_id, goals_conceded, saves, result, report, rating, match_type,
+                            match_duration, sub_gk_id, sub_minute, -- COLUNAS NOVAS
+                            db_bloq_sq_rast, db_bloq_sq_med, db_bloq_sq_alt, db_bloq_cq_rast, db_bloq_cq_med, db_bloq_cq_alt,
+                            db_rec_sq_med, db_rec_sq_alt, db_rec_cq_rast, db_rec_cq_med, db_rec_cq_alt, db_rec_cq_varr,
+                            db_desv_sq_pe, db_desv_sq_mfr, db_desv_sq_mlat, db_desv_sq_a1, db_desv_sq_a2, db_desv_cq_varr, db_desv_cq_r1, db_desv_cq_r2, db_desv_cq_a1, db_desv_cq_a2,
+                            db_ext_rec, db_ext_desv_1, db_ext_desv_2, db_voo_rec, db_voo_desv_1, db_voo_desv_2, db_voo_desv_mc,
+                            de_cabeca, de_carrinho, de_alivio, de_rececao,
+                            duelo_parede, duelo_abafo, duelo_estrela, duelo_frontal,
+                            pa_curto_1, pa_curto_2, pa_longo_1, pa_longo_2, dist_curta_mao, dist_longa_mao, dist_picada_mao, dist_volley, dist_curta_pe, dist_longa_pe,
+                            cruz_rec_alta, cruz_soco_1, cruz_soco_2, cruz_int_rast,
+                            eto_pb_curto, eto_pb_medio, eto_pb_longo
+                        ) VALUES (NULL, {",".join(["?"] * len(vals))})''', vals)
+                        
+                        conn.commit()
+                        backup_to_drive()
+                        st.success("Ficha de Jogo Guardada!")
+                    except Exception as e:
+                        st.error(f"Erro ao gravar: {e}")
+                    finally:
+                        conn.close()
             
+            # --- TABELA DE MINUTOS JOGADOS (NOVO) ---
             st.markdown("---")
-            st.subheader("Histórico de Jogos")
+            st.subheader("⏱️ Minutos Jogados (Época)")
+            
             conn = get_db_connection()
+            # Esta query calcula os minutos somando jogos completos + entradas - saídas
+            min_data = pd.read_sql_query("""
+                SELECT 
+                    m.match_duration, m.sub_minute, 
+                    g1.name as titular, 
+                    g2.name as suplente
+                FROM matches m
+                JOIN goalkeepers g1 ON m.gk_id = g1.id
+                LEFT JOIN goalkeepers g2 ON m.sub_gk_id = g2.id
+                WHERE m.user_id = ?
+            """, conn, params=(user,))
+            
+            if not min_data.empty:
+                minutes_map = {}
+                for _, row in min_data.iterrows():
+                    dur = row['match_duration'] if row['match_duration'] else 90
+                    sub_min = row['sub_minute']
+                    titu = row['titular']
+                    supl = row['suplente']
+                    
+                    if not supl: # Se não houve suplente, titular jogou tudo
+                        minutes_map[titu] = minutes_map.get(titu, 0) + dur
+                    else: # Se houve troca
+                        # Titular joga até sair
+                        minutes_map[titu] = minutes_map.get(titu, 0) + (sub_min if sub_min else dur)
+                        # Suplente joga o resto (Total - Minuto Entrada)
+                        minutes_map[supl] = minutes_map.get(supl, 0) + (dur - (sub_min if sub_min else 0))
+                
+                df_min = pd.DataFrame(list(minutes_map.items()), columns=['Guarda-Redes', 'Minutos Totais'])
+                df_min = df_min.sort_values(by='Minutos Totais', ascending=False)
+                st.dataframe(df_min, use_container_width=True)
+            else:
+                st.info("Sem dados de minutos ainda.")
+            
+            # --- HISTÓRICO ---
+            st.subheader("Histórico de Jogos")
             try:
                 hist = pd.read_sql_query("SELECT date, match_type, opponent, result, rating FROM matches WHERE user_id=? ORDER BY date DESC", conn, params=(user,))
             except:
                 hist = pd.read_sql_query("SELECT date, opponent, result, rating FROM matches WHERE user_id=? ORDER BY date DESC", conn, params=(user,))
             conn.close()
-            if not hist.empty: st.dataframe(hist, use_container_width=True)
-            else: st.info("Ainda sem jogos.")
-        else: st.info("Marca jogos primeiro na Gestão Semanal.")
+            if not hist.empty:
+                st.dataframe(hist, use_container_width=True)
+            else:
+                st.info("Ainda sem jogos.")
 
+        else: st.info("Marca jogos primeiro na Gestão Semanal.")
     # --- 8. CALENDÁRIO ---
     elif menu == "Calendário":
         st.header("📅 Calendário")
