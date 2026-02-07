@@ -483,7 +483,7 @@ if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'username' not in st.session_state: st.session_state['username'] = ''
 
 def login_page():
-    st.title("🔐 GK Manager Pro V52")
+    st.title("🔐 GK Manager Pro")
     menu = ["Login", "Criar Conta"]
     choice = st.selectbox("Menu", menu)
     
@@ -526,7 +526,7 @@ def main_app():
         ["Dashboard Geral", 
          "Gestão Semanal", 
          "Estatísticas & Presenças", 
-         "Escouting & Adversários", 
+         "Scouting & Adversários", 
          "Biblioteca Documentos", 
          "Relatórios & Avaliações", 
          "Evolução do Atleta", 
@@ -911,8 +911,8 @@ def main_app():
             conn.close()
 
     # --- 3. ESCOUTING E ADVERSÁRIOS ---
-    elif menu == "Escouting & Adversários":
-        st.header("🕵️ Escouting de Adversários")
+    elif menu == "Scouting & Adversários":
+        st.header("🕵️ Scouting de Adversários")
         conn = get_db_connection()
         opps = pd.read_sql_query("SELECT * FROM opponents WHERE user_id=?", conn, params=(user,))
         conn.close()
@@ -1070,7 +1070,7 @@ def main_app():
 
     # --- 4. BIBLIOTECA DE DOCUMENTOS ---
     elif menu == "Biblioteca Documentos":
-        st.header("📚 Minha Biblioteca Digital")
+        st.header("📚 Biblioteca Digital")
         conn = get_db_connection()
         folders = pd.read_sql_query("SELECT * FROM library_folders WHERE user_id=?", conn, params=(user,))
         conn.close()
@@ -1079,7 +1079,7 @@ def main_app():
         with c_nav:
             st.subheader("Pastas")
             with st.form("new_folder"):
-                nf = st.text_input("Nova Pasta (ex: Contratos)")
+                nf = st.text_input("Nova Pasta")
                 if st.form_submit_button("Criar"):
                     conn = get_db_connection()
                     conn.cursor().execute("INSERT INTO library_folders (user_id, name) VALUES (?,?)", (user, nf))
@@ -1174,7 +1174,7 @@ def main_app():
 
     # --- 7. CENTRO DE JOGO (COMPLETO) ---
     elif menu == "Centro de Jogo":
-        st.header("🏟️ Ficha de Jogo (Completa)")
+        st.header("🏟️ Ficha de Jogo")
         conn = get_db_connection()
         games = pd.read_sql_query("SELECT start_date, title FROM sessions WHERE user_id=? AND type='Jogo' ORDER BY start_date DESC", conn, params=(user,))
         gks = pd.read_sql_query("SELECT id, name FROM goalkeepers WHERE user_id=?", conn, params=(user,))
@@ -1193,7 +1193,7 @@ def main_app():
                 gk = c_top2.selectbox("Guarda-Redes Titular", gks['name'].tolist() if not gks.empty else [])
                 
                 c1, c2, c3, c4 = st.columns(4)
-                res = c1.text_input("Resultado (ex: 2-1)")
+                res = c1.text_input("Resultado")
                 gls = c2.number_input("Golos Sofridos", 0, 20)
                 svs = c3.number_input("Defesas Realizadas", 0, 50)
                 rt = c4.slider("Avaliação (1-10)", 1, 10, 5)
@@ -1260,9 +1260,9 @@ def main_app():
                     du_par = st.number_input("Parede", 0, 20)
                     du_aba = st.number_input("Abafo", 0, 20)
                     du_est = st.number_input("Estrela", 0, 20)
-                    du_fro = st.number_input("Frontal", 0, 20)
+                    du_fro = st.number_input("Ataque Frontal", 0, 20)
 
-                with st.expander("🎯 7. DISTRIBUIÇÃO (TÁTICA)"):
+                with st.expander("🎯 7. DISTRIBUIÇÃO"):
                     pa_c1 = st.number_input("Passe Curto 1T", 0, 50)
                     pa_c2 = st.number_input("Passe Curto 2T", 0, 50)
                     pa_l1 = st.number_input("Passe Longo 1T", 0, 50)
@@ -1398,17 +1398,17 @@ def main_app():
                     b1,b2,b3,b4,b5=st.columns(5)
                     ht=b1.number_input("Altura", 0.0, 250.0, value=d_h)
                     ws=b2.number_input("Envergadura", 0.0, 250.0, value=d_w)
-                    al=b3.number_input("Braço E", 0.0, 150.0, value=d_al)
-                    ar=b4.number_input("Braço D", 0.0, 150.0, value=d_ar)
-                    gl=b5.text_input("Luva", value=d_gl)
+                    al=b3.number_input("Braço Esquerdo", 0.0, 150.0, value=d_al)
+                    ar=b4.number_input("Braço Direito", 0.0, 150.0, value=d_ar)
+                    gl=b5.text_input("Tamanho da Luva", value=d_gl)
                     st.subheader("3. Saltos")
                     j1,j2,j3=st.columns(3)
-                    jf2=j1.number_input("Frontal 2", 0.0, value=d_jf2)
-                    jfl=j2.number_input("Frontal E", 0.0, value=d_jfl)
-                    jfr=j3.number_input("Frontal D", 0.0, value=d_jfr)
+                    jf2=j1.number_input("Frontal 2 Pés", 0.0, value=d_jf2)
+                    jfl=j2.number_input("Frontal Pé Esquerdo", 0.0, value=d_jfl)
+                    jfr=j3.number_input("Frontal Pé Direito", 0.0, value=d_jfr)
                     j4,j5=st.columns(2)
-                    jll=j4.number_input("Lateral E", 0.0, value=d_jll)
-                    jlr=j5.number_input("Lateral D", 0.0, value=d_jlr)
+                    jll=j4.number_input("Lateral Esquerdo", 0.0, value=d_jll)
+                    jlr=j5.number_input("Lateral Direito", 0.0, value=d_jlr)
                     st.subheader("4. Testes")
                     t1,t2,t3=st.columns(3)
                     tr=t1.text_input("Resistência", value=d_tr)
