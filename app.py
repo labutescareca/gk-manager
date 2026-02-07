@@ -136,206 +136,88 @@ def get_db_connection():
 
 def check_db_updates():
     """
-    Verifica e cria todas as tabelas necessárias no arranque.
-    Garante que não existem erros de 'no such table'.
+    Verifica e cria todas as tabelas e colunas necessárias.
+    Versão blindada para evitar erros de conexão fechada.
     """
+    # 1. Abrir Conexão
     conn = get_db_connection()
     c = conn.cursor()
     
-    # 1. Tabela de Utilizadores
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-                    username TEXT PRIMARY KEY, 
-                    password TEXT)''')
-    
-    # 2. Tabela de Atletas
-    c.execute('''CREATE TABLE IF NOT EXISTS goalkeepers (
-                    id INTEGER PRIMARY KEY, 
-                    user_id TEXT, 
-                    name TEXT, 
-                    age INTEGER, 
-                    status TEXT, 
-                    notes TEXT,
-                    height REAL, 
-                    wingspan REAL, 
-                    arm_len_left REAL, 
-                    arm_len_right REAL, 
-                    glove_size TEXT,
-                    jump_front_2 REAL, 
-                    jump_front_l REAL, 
-                    jump_front_r REAL, 
-                    jump_lat_l REAL, 
-                    jump_lat_r REAL,
-                    test_res TEXT, 
-                    test_agil TEXT, 
-                    test_vel TEXT)''')
-    
-    # 3. Tabela de Exercícios
-    c.execute('''CREATE TABLE IF NOT EXISTS exercises (
-                    id INTEGER PRIMARY KEY, 
-                    user_id TEXT, 
-                    title TEXT, 
-                    moment TEXT, 
-                    training_type TEXT, 
-                    description TEXT, 
-                    objective TEXT, 
-                    materials TEXT, 
-                    space TEXT, 
-                    image BLOB)''')
-    
-    # 4. Tabela de Sessões (Treinos e Jogos)
-    c.execute('''CREATE TABLE IF NOT EXISTS sessions (
-                    id INTEGER PRIMARY KEY, 
-                    user_id TEXT, 
-                    type TEXT, 
-                    title TEXT, 
-                    start_date TEXT, 
-                    drills_list TEXT, 
-                    report TEXT,
-                    status TEXT,
-                    opponent TEXT,
-                    match_time TEXT,
-                    location TEXT)''')
-    
-    # 5. Tabela de Microciclos (Semanas)
-    c.execute('''CREATE TABLE IF NOT EXISTS microcycles (
-                    id INTEGER PRIMARY KEY, 
-                    user_id TEXT, 
-                    title TEXT, 
-                    start_date TEXT, 
-                    goal TEXT, 
-                    report TEXT)''')
-    
-    # 6. Tabela de Avaliações de Treino
-    c.execute('''CREATE TABLE IF NOT EXISTS training_ratings (
-                    id INTEGER PRIMARY KEY, 
-                    user_id TEXT, 
-                    date TEXT, 
-                    gk_id INTEGER, 
-                    rating INTEGER, 
-                    notes TEXT)''')
-    
-    # 7. Tabela de Presenças
-    c.execute('''CREATE TABLE IF NOT EXISTS attendance (
-                    id INTEGER PRIMARY KEY, 
-                    session_id INTEGER, 
-                    gk_id INTEGER, 
-                    status TEXT)''')
-    
-    # 8. Tabela de Jogos (Estatísticas Completas - 72 Variáveis)
-    c.execute('''CREATE TABLE IF NOT EXISTS matches (
-                    id INTEGER PRIMARY KEY, 
-                    user_id TEXT, 
-                    date TEXT, 
-                    opponent TEXT, 
-                    gk_id INTEGER, 
-                    goals_conceded INTEGER, 
-                    saves INTEGER, 
-                    result TEXT, 
-                    report TEXT, 
-                    rating INTEGER,
-                    match_type TEXT,
-                    
-                    -- BLOQUEIOS
-                    db_bloq_sq_rast INTEGER, db_bloq_sq_med INTEGER, db_bloq_sq_alt INTEGER, 
-                    db_bloq_cq_rast INTEGER, db_bloq_cq_med INTEGER, db_bloq_cq_alt INTEGER, 
-                    
-                    -- RECEÇÕES
-                    db_rec_sq_med INTEGER, db_rec_sq_alt INTEGER, 
-                    db_rec_cq_rast INTEGER, db_rec_cq_med INTEGER, db_rec_cq_alt INTEGER, db_rec_cq_varr INTEGER, 
-                    
-                    -- DESVIOS
-                    db_desv_sq_pe INTEGER, db_desv_sq_mfr INTEGER, db_desv_sq_mlat INTEGER, 
-                    db_desv_sq_a1 INTEGER, db_desv_sq_a2 INTEGER, 
-                    db_desv_cq_varr INTEGER, db_desv_cq_r1 INTEGER, db_desv_cq_r2 INTEGER, 
-                    db_desv_cq_a1 INTEGER, db_desv_cq_a2 INTEGER, 
-                    
-                    -- EXTENSÃO E VOO
-                    db_ext_rec INTEGER, db_ext_desv_1 INTEGER, db_ext_desv_2 INTEGER, 
-                    db_voo_rec INTEGER, db_voo_desv_1 INTEGER, db_voo_desv_2 INTEGER, db_voo_desv_mc INTEGER, 
-                    
-                    -- CONTROLO ESPAÇO
-                    de_cabeca INTEGER, de_carrinho INTEGER, de_alivio INTEGER, de_rececao INTEGER, 
-                    
-                    -- DUELOS
-                    duelo_parede INTEGER, duelo_abafo INTEGER, duelo_estrela INTEGER, duelo_frontal INTEGER, 
-                    
-                    -- DISTRIBUIÇÃO
-                    pa_curto_1 INTEGER, pa_curto_2 INTEGER, pa_longo_1 INTEGER, pa_longo_2 INTEGER, 
-                    dist_curta_mao INTEGER, dist_longa_mao INTEGER, dist_picada_mao INTEGER, dist_volley INTEGER, 
-                    dist_curta_pe INTEGER, dist_longa_pe INTEGER, 
-                    
-                    -- CRUZAMENTOS
-                    cruz_rec_alta INTEGER, cruz_soco_1 INTEGER, cruz_soco_2 INTEGER, cruz_int_rast INTEGER,
-                    
-                    -- ESQUEMAS TÁTICOS
-                    eto_pb_curto INTEGER, eto_pb_medio INTEGER, eto_pb_longo INTEGER
-                    )''')
-    
-    # 9. Tabela de Adversários (Scouting)
-    c.execute('''CREATE TABLE IF NOT EXISTS opponents (
-                    id INTEGER PRIMARY KEY, 
-                    user_id TEXT, 
-                    name TEXT, 
-                    notes TEXT)''')
-    
-    # 10. Ficheiros de Adversários
-    c.execute('''CREATE TABLE IF NOT EXISTS opponent_files (
-                    id INTEGER PRIMARY KEY, 
-                    opponent_id INTEGER, 
-                    name TEXT, 
-                    type TEXT, 
-                    content BLOB, 
-                    link TEXT)''')
-    
-    # 11. Pastas da Biblioteca
-    c.execute('''CREATE TABLE IF NOT EXISTS library_folders (
-                    id INTEGER PRIMARY KEY, 
-                    user_id TEXT, 
-                    name TEXT)''')
-    
-    # 12. Ficheiros da Biblioteca
-    c.execute('''CREATE TABLE IF NOT EXISTS library_files (
-                    id INTEGER PRIMARY KEY, 
-                    folder_id INTEGER, 
-                    name TEXT, 
-                    type TEXT, 
-                    content BLOB, 
-                    link TEXT, 
-                    description TEXT)''')
-
-    # 13. Tabela de Lesões (NOVA V52)
-    c.execute('''CREATE TABLE IF NOT EXISTS injuries (
-                    id INTEGER PRIMARY KEY,
-                    gk_id INTEGER,
-                    injury_date TEXT,
-                    recovery_weeks INTEGER,
-                    description TEXT,
-                    active INTEGER)''') 
-
-    # --- MIGRAÇÕES E CORREÇÕES AUTOMÁTICAS ---
-    # Adicionar colunas novas se a base de dados for antiga
     try:
-        c.execute("ALTER TABLE sessions ADD COLUMN match_time TEXT")
-    except:
-        pass # Coluna já existe
+        # --- CRIAÇÃO DE TABELAS (Se não existirem) ---
+        c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS goalkeepers (id INTEGER PRIMARY KEY, user_id TEXT, name TEXT, age INTEGER, status TEXT, notes TEXT, height REAL, wingspan REAL, arm_len_left REAL, arm_len_right REAL, glove_size TEXT, jump_front_2 REAL, jump_front_l REAL, jump_front_r REAL, jump_lat_l REAL, jump_lat_r REAL, test_res TEXT, test_agil TEXT, test_vel TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS exercises (id INTEGER PRIMARY KEY, user_id TEXT, title TEXT, moment TEXT, training_type TEXT, description TEXT, objective TEXT, materials TEXT, space TEXT, image BLOB)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY, user_id TEXT, type TEXT, title TEXT, start_date TEXT, drills_list TEXT, report TEXT, status TEXT, opponent TEXT, match_time TEXT, location TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS microcycles (id INTEGER PRIMARY KEY, user_id TEXT, title TEXT, start_date TEXT, goal TEXT, report TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS training_ratings (id INTEGER PRIMARY KEY, user_id TEXT, date TEXT, gk_id INTEGER, rating INTEGER, notes TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS attendance (id INTEGER PRIMARY KEY, session_id INTEGER, gk_id INTEGER, status TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS injuries (id INTEGER PRIMARY KEY, gk_id INTEGER, injury_date TEXT, recovery_weeks INTEGER, description TEXT, active INTEGER)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS opponents (id INTEGER PRIMARY KEY, user_id TEXT, name TEXT, notes TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS opponent_files (id INTEGER PRIMARY KEY, opponent_id INTEGER, name TEXT, type TEXT, content BLOB, link TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS library_folders (id INTEGER PRIMARY KEY, user_id TEXT, name TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS library_files (id INTEGER PRIMARY KEY, folder_id INTEGER, name TEXT, type TEXT, content BLOB, link TEXT, description TEXT)''')
+
+        # Tabela Matches Completa (com as novas colunas já incluídas na criação base)
+        c.execute('''CREATE TABLE IF NOT EXISTS matches (
+                        id INTEGER PRIMARY KEY, user_id TEXT, date TEXT, opponent TEXT, gk_id INTEGER, goals_conceded INTEGER, saves INTEGER, result TEXT, report TEXT, rating INTEGER, match_type TEXT,
+                        
+                        -- Colunas Novas (Tempo e Subs)
+                        match_duration INTEGER DEFAULT 90,
+                        sub_gk_id INTEGER,
+                        sub_minute INTEGER,
+                        sub2_gk_id INTEGER,
+                        sub2_minute INTEGER,
+
+                        db_bloq_sq_rast INTEGER, db_bloq_sq_med INTEGER, db_bloq_sq_alt INTEGER, db_bloq_cq_rast INTEGER, db_bloq_cq_med INTEGER, db_bloq_cq_alt INTEGER, 
+                        db_rec_sq_med INTEGER, db_rec_sq_alt INTEGER, db_rec_cq_rast INTEGER, db_rec_cq_med INTEGER, db_rec_cq_alt INTEGER, db_rec_cq_varr INTEGER, 
+                        db_desv_sq_pe INTEGER, db_desv_sq_mfr INTEGER, db_desv_sq_mlat INTEGER, db_desv_sq_a1 INTEGER, db_desv_sq_a2 INTEGER, db_desv_cq_varr INTEGER, db_desv_cq_r1 INTEGER, db_desv_cq_r2 INTEGER, db_desv_cq_a1 INTEGER, db_desv_cq_a2 INTEGER, 
+                        db_ext_rec INTEGER, db_ext_desv_1 INTEGER, db_ext_desv_2 INTEGER, db_voo_rec INTEGER, db_voo_desv_1 INTEGER, db_voo_desv_2 INTEGER, db_voo_desv_mc INTEGER, 
+                        de_cabeca INTEGER, de_carrinho INTEGER, de_alivio INTEGER, de_rececao INTEGER, 
+                        duelo_parede INTEGER, duelo_abafo INTEGER, duelo_estrela INTEGER, duelo_frontal INTEGER, 
+                        pa_curto_1 INTEGER, pa_curto_2 INTEGER, pa_longo_1 INTEGER, pa_longo_2 INTEGER, dist_curta_mao INTEGER, dist_longa_mao INTEGER, dist_picada_mao INTEGER, dist_volley INTEGER, dist_curta_pe INTEGER, dist_longa_pe INTEGER, 
+                        cruz_rec_alta INTEGER, cruz_soco_1 INTEGER, cruz_soco_2 INTEGER, cruz_int_rast INTEGER,
+                        eto_pb_curto INTEGER, eto_pb_medio INTEGER, eto_pb_longo INTEGER)''')
+
+        # --- ATUALIZAÇÃO SEGURA (MIGRAÇÕES) ---
+        # Adiciona colunas que possam faltar em bases de dados antigas
+        # Usamos uma lista para não repetir código
+        # --- ATUALIZAÇÃO SEGURA (MIGRAÇÕES) ---
+        # Adiciona colunas novas à tabela matches
+        new_columns = [
+            ("sessions", "match_time", "TEXT"),
+            ("matches", "match_duration", "INTEGER DEFAULT 90"),
+            ("matches", "sub_gk_id", "INTEGER"),
+            ("matches", "sub_minute", "INTEGER"),
+            ("matches", "sub2_gk_id", "INTEGER"),
+            ("matches", "sub2_minute", "INTEGER"),
+            
+            # NOVO: Estatísticas de Remates
+            ("matches", "shots_faced", "INTEGER"),      # Remates à baliza (No alvo)
+            ("matches", "shots_off_target", "INTEGER"), # Remates para fora
+            
+            # NOVO: Atributos Psicológicos (1-5 ou 1-10)
+            ("matches", "psy_comm", "INTEGER"),      # Comunicação
+            ("matches", "psy_decision", "INTEGER"),  # Tomada de Decisão
+            ("matches", "psy_posture", "INTEGER"),   # Postura/Presença
+            ("matches", "psy_resilience", "INTEGER") # Resiliência
+        ]
+
+        for table, col, type_ in new_columns:
+            try:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {col} {type_}")
+            except sqlite3.OperationalError:
+                pass # Coluna já existe
+            except Exception as e:
+                print(f"Aviso DB ({col}): {e}")
+
+        conn.commit()
+    except Exception as e:
+        st.error(f"Erro Crítico na Base de Dados: {e}")
     
-    # ... (código das tabelas que já lá tens) ...
-
-    # --- NOVO: COLUNAS PARA SUBSTITUIÇÃO E TEMPO ---
-    # Tenta adicionar as colunas se elas não existirem
-    try: c.execute("ALTER TABLE matches ADD COLUMN match_duration INTEGER DEFAULT 90")
-    except: pass
-    try: c.execute("ALTER TABLE matches ADD COLUMN sub_gk_id INTEGER")
-    except: pass
-    try: c.execute("ALTER TABLE matches ADD COLUMN sub_minute INTEGER")
-    except: pass
-
-    conn.commit()
-    conn.close()
-
-
-    conn.commit()
-    conn.close()
+    finally:
+        # Isto garante que a conexão fecha SEMPRE, aconteça o que acontecer
+        conn.close()
 
 # --- ARRANQUE DO SISTEMA (Sincronização) ---
 if 'drive_synced' not in st.session_state:
@@ -1294,245 +1176,400 @@ def main_app():
             else: st.info("Sem dados de avaliação ainda.")
         else: st.warning("Crie atletas primeiro.")
 
-    # --- 7. CENTRO DE JOGO (COMPLETO) ---
-    # --- 7. CENTRO DE JOGO (ATUALIZADO COM MINUTOS E SUBSTITUIÇÕES) ---
+
+# --- 7. CENTRO DE JOGO (V62 - LAYOUT LIMPO + CORREÇÃO DB) ---
     elif menu == "Centro de Jogo":
-        st.header("🏟️ Ficha de Jogo (Completa)")
-        conn = get_db_connection()
-        games = pd.read_sql_query("SELECT start_date, title FROM sessions WHERE user_id=? AND type='Jogo' ORDER BY start_date DESC", conn, params=(user,))
-        gks = pd.read_sql_query("SELECT id, name FROM goalkeepers WHERE user_id=?", conn, params=(user,))
-        conn.close()
+        st.header("🏟️ Centro de Jogo & Análise Técnica")
         
-        if not games.empty:
-            game_opt = [f"{r['start_date']} | {r['title']}" for _, r in games.iterrows()]
-            sel_game = st.selectbox("Escolher Jogo", game_opt)
-            sel_date = sel_game.split(" | ")[0]
+        # 1. ABRIR CONEXÃO (Fica aberta até ao fim deste bloco)
+        conn = get_db_connection()
+        
+        tab_new, tab_manage = st.tabs(["➕ Registrar Jogo", "⚙️ Gerir & Editar"])
+        
+        # --- ABA 1: NOVO REGISTO ---
+        with tab_new:
+            gks = pd.read_sql_query("SELECT id, name FROM goalkeepers WHERE user_id=?", conn, params=(user,))
             
-            st.markdown("---")
-            
-            # --- FORMULÁRIO DE DADOS ---
-            with st.form("match_stats"):
-                st.subheader("Informação Base")
-                
-                # LINHA 1: TIPO, DURAÇÃO, GR TITULAR
-                c_top1, c_top2, c_top3 = st.columns(3)
-                match_type = c_top1.selectbox("Tipo de Jogo", ["Oficial", "Amigável"])
-                match_dur = c_top2.number_input("Duração (min)", value=90)
-                gk = c_top3.selectbox("GR Titular", gks['name'].tolist() if not gks.empty else [])
-                
-                # LINHA 2: SUBSTITUIÇÃO
-                has_sub = st.checkbox("Houve Substituição de GR?")
-                sub_id_val = None
-                sub_min_val = 0
-                
-                if has_sub:
-                    c_sub1, c_sub2 = st.columns(2)
-                    sub_opts = [g for g in gks['name'].tolist() if g != gk] # Remove o titular da lista
-                    gk_sub_name = c_sub1.selectbox("GR Suplente (Entrou)", sub_opts)
-                    sub_min_val = c_sub2.number_input("Minuto da Entrada", 1, match_dur, 45)
-                    # Buscar ID do suplente
-                    if not gks.empty:
-                        sub_id_val = int(gks[gks['name']==gk_sub_name].iloc[0]['id'])
+            with st.expander("Dados do Jogo (Geral)", expanded=True):
+                c1, c2, c3 = st.columns(3)
+                match_date = c1.date_input("Data", datetime.today(), key="nd")
+                opponent = c2.text_input("Adversário", key="nopp")
+                match_type = c3.selectbox("Tipo", ["Oficial", "Amigável"], key="ntp")
+                c4, c5 = st.columns(2)
+                result = c4.text_input("Resultado", key="nres")
+                selected_gks_names = c5.multiselect("Quem jogou?", gks['name'].tolist() if not gks.empty else [], key="ngks")
 
+            if selected_gks_names:
                 st.divider()
+                with st.form("stat_form"):
+                    tabs = st.tabs(selected_gks_names)
+                    inputs = {} 
 
-                # LINHA 3: RESULTADO E NOTA
-                c1, c2, c3, c4 = st.columns(4)
-                res = c1.text_input("Resultado (ex: 2-1)")
-                gls = c2.number_input("Golos Sofridos", 0, 20)
-                svs = c3.number_input("Defesas Realizadas", 0, 50)
-                rt = c4.slider("Avaliação (1-10)", 1, 10, 5)
-
-                # --- 72 VARIÁVEIS ESTATÍSTICAS ---
-                with st.expander("🧱 1. DEFESA DE BALIZA: BLOQUEIOS"):
-                    b1, b2 = st.columns(2)
-                    with b1:
-                        st.caption("Sem Queda")
-                        bloq_sq_r = st.number_input("Rasteiro (SQ)", 0, 20, key="b1")
-                        bloq_sq_m = st.number_input("Médio (SQ)", 0, 20, key="b2")
-                        bloq_sq_a = st.number_input("Alto (SQ)", 0, 20, key="b3")
-                    with b2:
-                        st.caption("Com Queda")
-                        bloq_cq_r = st.number_input("Rasteiro (CQ)", 0, 20, key="b4")
-                        bloq_cq_m = st.number_input("Médio (CQ)", 0, 20, key="b5")
-                        bloq_cq_a = st.number_input("Alto (CQ)", 0, 20, key="b6")
-
-                with st.expander("👐 2. DEFESA DE BALIZA: RECEÇÕES"):
-                    r1, r2 = st.columns(2)
-                    with r1:
-                        rec_sq_m = st.number_input("Médio (SQ)", 0, 20, key="r1")
-                        rec_sq_a = st.number_input("Alto (SQ)", 0, 20, key="r2")
-                    with r2:
-                        rec_cq_r = st.number_input("Rasteiro (CQ)", 0, 20, key="r3")
-                        rec_cq_m = st.number_input("Médio (CQ)", 0, 20, key="r4")
-                        rec_cq_a = st.number_input("Alto (CQ)", 0, 20, key="r5")
-                        rec_cq_v = st.number_input("Varrimento", 0, 20, key="r6")
-
-                with st.expander("🧤 3. DEFESA DE BALIZA: DESVIOS"):
-                    d1, d2 = st.columns(2)
-                    with d1:
-                        desv_sq_p = st.number_input("Pé", 0, 20, key="d1")
-                        desv_sq_mf = st.number_input("Médio Frontal", 0, 20, key="d2")
-                        desv_sq_ml = st.number_input("Médio Lateral", 0, 20, key="d3")
-                        desv_sq_a1 = st.number_input("Alto 1 Mão", 0, 20, key="d4")
-                        desv_sq_a2 = st.number_input("Alto 2 Mãos", 0, 20, key="d5")
-                    with d2:
-                        desv_cq_v = st.number_input("Varrimento", 0, 20, key="d6")
-                        desv_cq_r1 = st.number_input("Rasteiro 1 Mão", 0, 20, key="d7")
-                        desv_cq_r2 = st.number_input("Rasteiro 2 Mãos", 0, 20, key="d8")
-                        desv_cq_a1 = st.number_input("Alto 1 Mão (CQ)", 0, 20, key="d9")
-                        desv_cq_a2 = st.number_input("Alto 2 Mãos (CQ)", 0, 20, key="d10")
-
-                with st.expander("✈️ 4. DEFESA DE BALIZA: EXTENSÃO E VOO"):
-                    e1, e2 = st.columns(2)
-                    with e1:
-                        ext_rec = st.number_input("Ext. Receção", 0, 20, key="e1")
-                        ext_d1 = st.number_input("Ext. Desvio 1", 0, 20, key="e2")
-                        ext_d2 = st.number_input("Ext. Desvio 2", 0, 20, key="e3")
-                    with e2:
-                        voo_rec = st.number_input("Voo Receção", 0, 20, key="v1")
-                        voo_d1 = st.number_input("Voo Desvio 1", 0, 20, key="v2")
-                        voo_d2 = st.number_input("Voo Desvio 2", 0, 20, key="v3")
-                        voo_dmc = st.number_input("Voo Mão Contrária", 0, 20, key="v4")
-
-                with st.expander("🚀 5. DEFESA DO ESPAÇO"):
-                    de_cab = st.number_input("Cabeceamento", 0, 20)
-                    de_car = st.number_input("Carrinho", 0, 20)
-                    de_ali = st.number_input("Alívio", 0, 20)
-                    de_rec = st.number_input("Receção", 0, 20)
-
-                with st.expander("⚔️ 6. DUELOS (1x1)"):
-                    du_par = st.number_input("Parede", 0, 20)
-                    du_aba = st.number_input("Abafo", 0, 20)
-                    du_est = st.number_input("Estrela", 0, 20)
-                    du_fro = st.number_input("Frontal", 0, 20)
-
-                with st.expander("🎯 7. DISTRIBUIÇÃO (TÁTICA)"):
-                    pa_c1 = st.number_input("Passe Curto 1T", 0, 50)
-                    pa_c2 = st.number_input("Passe Curto 2T", 0, 50)
-                    pa_l1 = st.number_input("Passe Longo 1T", 0, 50)
-                    pa_l2 = st.number_input("Passe Longo 2T", 0, 50)
-                    di_cm = st.number_input("Mão Curta", 0, 50)
-                    di_lm = st.number_input("Mão Longa", 0, 50)
-                    di_pm = st.number_input("Mão Picada", 0, 50)
-                    di_vo = st.number_input("Volley", 0, 50)
-                    di_cp = st.number_input("Pé Curta", 0, 50)
-                    di_lp = st.number_input("Pé Longa", 0, 50)
-
-                with st.expander("⚽ 8. ESQUEMAS TÁTICOS OFENSIVOS"):
-                    eto_pb_curto = st.number_input("Pontapé Baliza Curto", 0, 50)
-                    eto_pb_medio = st.number_input("Pontapé Baliza Meia Distância", 0, 50)
-                    eto_pb_longo = st.number_input("Pontapé Baliza Longo", 0, 50)
-
-                with st.expander("🥅 9. CRUZAMENTOS"):
-                    cr_rec = st.number_input("Cruz. Receção", 0, 50)
-                    cr_s1 = st.number_input("Cruz. Soco 1", 0, 50)
-                    cr_s2 = st.number_input("Cruz. Soco 2", 0, 50)
-                    cr_int = st.number_input("Cruz. Interceção", 0, 50)
-
-                rep = st.text_area("Análise do Treinador")
-                
-                if st.form_submit_button("Guardar Ficha de Jogo"):
-                    conn = get_db_connection()
-                    gid = int(gks[gks['name']==gk].iloc[0]['id']) if not gks.empty else 0
-                    c = conn.cursor()
-                    
-                    # Apagar anterior se existir para evitar duplicados
-                    c.execute("DELETE FROM matches WHERE user_id=? AND date=?", (user, sel_date))
-                    
-                    # INSERÇÃO COM COLUNAS DE TEMPO E SUBSTITUIÇÃO
-                    # Nota: As interrogações (?) correspondem aos valores na variável 'vals'
-                    try:
-                        vals = (
-                            user, sel_date, sel_game.split(" | ")[1], gid, gls, svs, res, rep, rt, match_type,
-                            match_dur, sub_id_val, sub_min_val, # <--- NOVOS CAMPOS AQUI
-                            bloq_sq_r, bloq_sq_m, bloq_sq_a, bloq_cq_r, bloq_cq_m, bloq_cq_a,
-                            rec_sq_m, rec_sq_a, rec_cq_r, rec_cq_m, rec_cq_a, rec_cq_v,
-                            desv_sq_p, desv_sq_mf, desv_sq_ml, desv_sq_a1, desv_sq_a2, 
-                            desv_cq_v, desv_cq_r1, desv_cq_r2, desv_cq_a1, desv_cq_a2,
-                            ext_rec, ext_d1, ext_d2, voo_rec, voo_d1, voo_d2, voo_dmc,
-                            de_cab, de_car, de_ali, de_rec, 
-                            du_par, du_aba, du_est, du_fro,
-                            pa_c1, pa_c2, pa_l1, pa_l2, di_cm, di_lm, di_pm, di_vo, di_cp, di_lp,
-                            cr_rec, cr_s1, cr_s2, cr_int,
-                            eto_pb_curto, eto_pb_medio, eto_pb_longo
-                        )
+                    for i, gk_name in enumerate(selected_gks_names):
+                        gid = int(gks[gks['name'] == gk_name].iloc[0]['id'])
+                        inputs[gid] = {}
                         
-                        # Query SQL Completa
-                        c.execute(f'''INSERT INTO matches (
-                            id, user_id, date, opponent, gk_id, goals_conceded, saves, result, report, rating, match_type,
-                            match_duration, sub_gk_id, sub_minute, -- COLUNAS NOVAS
-                            db_bloq_sq_rast, db_bloq_sq_med, db_bloq_sq_alt, db_bloq_cq_rast, db_bloq_cq_med, db_bloq_cq_alt,
-                            db_rec_sq_med, db_rec_sq_alt, db_rec_cq_rast, db_rec_cq_med, db_rec_cq_alt, db_rec_cq_varr,
-                            db_desv_sq_pe, db_desv_sq_mfr, db_desv_sq_mlat, db_desv_sq_a1, db_desv_sq_a2, db_desv_cq_varr, db_desv_cq_r1, db_desv_cq_r2, db_desv_cq_a1, db_desv_cq_a2,
-                            db_ext_rec, db_ext_desv_1, db_ext_desv_2, db_voo_rec, db_voo_desv_1, db_voo_desv_2, db_voo_desv_mc,
-                            de_cabeca, de_carrinho, de_alivio, de_rececao,
-                            duelo_parede, duelo_abafo, duelo_estrela, duelo_frontal,
-                            pa_curto_1, pa_curto_2, pa_longo_1, pa_longo_2, dist_curta_mao, dist_longa_mao, dist_picada_mao, dist_volley, dist_curta_pe, dist_longa_pe,
-                            cruz_rec_alta, cruz_soco_1, cruz_soco_2, cruz_int_rast,
-                            eto_pb_curto, eto_pb_medio, eto_pb_longo
-                        ) VALUES (NULL, {",".join(["?"] * len(vals))})''', vals)
-                        
-                        conn.commit()
-                        backup_to_drive()
-                        st.success("Ficha de Jogo Guardada!")
-                    except Exception as e:
-                        st.error(f"Erro ao gravar: {e}")
-                    finally:
-                        conn.close()
-            
-            # --- TABELA DE MINUTOS JOGADOS (NOVO) ---
-            st.markdown("---")
-            st.subheader("⏱️ Minutos Jogados (Época)")
-            
-            conn = get_db_connection()
-            # Esta query calcula os minutos somando jogos completos + entradas - saídas
-            min_data = pd.read_sql_query("""
-                SELECT 
-                    m.match_duration, m.sub_minute, 
-                    g1.name as titular, 
-                    g2.name as suplente
-                FROM matches m
-                JOIN goalkeepers g1 ON m.gk_id = g1.id
-                LEFT JOIN goalkeepers g2 ON m.sub_gk_id = g2.id
-                WHERE m.user_id = ?
-            """, conn, params=(user,))
-            
-            if not min_data.empty:
-                minutes_map = {}
-                for _, row in min_data.iterrows():
-                    dur = row['match_duration'] if row['match_duration'] else 90
-                    sub_min = row['sub_minute']
-                    titu = row['titular']
-                    supl = row['suplente']
-                    
-                    if not supl: # Se não houve suplente, titular jogou tudo
-                        minutes_map[titu] = minutes_map.get(titu, 0) + dur
-                    else: # Se houve troca
-                        # Titular joga até sair
-                        minutes_map[titu] = minutes_map.get(titu, 0) + (sub_min if sub_min else dur)
-                        # Suplente joga o resto (Total - Minuto Entrada)
-                        minutes_map[supl] = minutes_map.get(supl, 0) + (dur - (sub_min if sub_min else 0))
-                
-                df_min = pd.DataFrame(list(minutes_map.items()), columns=['Guarda-Redes', 'Minutos Totais'])
-                df_min = df_min.sort_values(by='Minutos Totais', ascending=False)
-                st.dataframe(df_min, use_container_width=True)
-            else:
-                st.info("Sem dados de minutos ainda.")
-            
-            # --- HISTÓRICO ---
-            st.subheader("Histórico de Jogos")
-            try:
-                hist = pd.read_sql_query("SELECT date, match_type, opponent, result, rating FROM matches WHERE user_id=? ORDER BY date DESC", conn, params=(user,))
-            except:
-                hist = pd.read_sql_query("SELECT date, opponent, result, rating FROM matches WHERE user_id=? ORDER BY date DESC", conn, params=(user,))
-            conn.close()
-            if not hist.empty:
-                st.dataframe(hist, use_container_width=True)
-            else:
-                st.info("Ainda sem jogos.")
+                        with tabs[i]:
+                            st.subheader(f"Performance: {gk_name}")
+                            
+                            # 1. DADOS DE JOGO (MINUTOS, GOLOS, NOTA)
+                            c_p1, c_p2, c_p3, c_p4 = st.columns(4)
+                            inputs[gid]['min'] = c_p1.number_input("Minutos", 0, 120, 90, key=f"m_{gid}")
+                            inputs[gid]['gls'] = c_p2.number_input("Golos Sofridos", 0, 20, 0, key=f"g_{gid}")
+                            inputs[gid]['sav'] = c_p3.number_input("Defesas (Saves)", 0, 50, 0, key=f"s_{gid}")
+                            inputs[gid]['rat'] = c_p4.slider("Nota Final", 1, 10, 5, key=f"r_{gid}")
+                            
+                            st.markdown("---")
 
-        else: st.info("Marca jogos primeiro na Gestão Semanal.")
+                            # 2. REMATES (ARRUMADO EM 2 COLUNAS)
+                            st.markdown("###### 🥅 Estatística de Remates")
+                            c_rem1, c_rem2 = st.columns(2)
+                            inputs[gid]['sh_faced'] = c_rem1.number_input("Remates no Alvo (Golos + Defesas)", 0, 50, 0, key=f"shf_{gid}")
+                            inputs[gid]['sh_off'] = c_rem2.number_input("Remates para Fora / Postes", 0, 50, 0, key=f"sho_{gid}")
+
+                            st.markdown("---")
+
+                            # 3. PSICOLOGIA (ARRUMADO EM GRID 2x2)
+                            st.markdown("###### 🧠 Avaliação Psicológica")
+                            c_psy1, c_psy2 = st.columns(2)
+                            with c_psy1:
+                                inputs[gid]['psy_comm'] = st.slider("🗣️ Comunicação", 1, 10, 5, key=f"pc_{gid}")
+                                inputs[gid]['psy_dec'] = st.slider("⚡ Decisão", 1, 10, 5, key=f"pd_{gid}")
+                            with c_psy2:
+                                inputs[gid]['psy_pos'] = st.slider("🧘 Postura / Linguagem Corporal", 1, 10, 5, key=f"pp_{gid}")
+                                inputs[gid]['psy_res'] = st.slider("💪 Resiliência / Reação ao Erro", 1, 10, 5, key=f"pr_{gid}")
+
+                            st.markdown("---")
+                            inputs[gid]['rep'] = st.text_area(f"Análise Individual (Texto)", key=f"rp_{gid}", height=80)
+
+                            # 4. AÇÕES TÉCNICAS
+                            st.markdown("#### 🛠️ Ações Técnicas")
+
+                            with st.expander(f"🧱 1. BLOQUEIOS ({gk_name})"):
+                                b1, b2 = st.columns(2)
+                                with b1:
+                                    inputs[gid]['b_sq_r'] = st.number_input("Rasteiro (SQ)", 0, 20, key=f"bsqr_{gid}")
+                                    inputs[gid]['b_sq_m'] = st.number_input("Médio (SQ)", 0, 20, key=f"bsqm_{gid}")
+                                    inputs[gid]['b_sq_a'] = st.number_input("Alto (SQ)", 0, 20, key=f"bsqa_{gid}")
+                                with b2:
+                                    inputs[gid]['b_cq_r'] = st.number_input("Rasteiro (CQ)", 0, 20, key=f"bcqr_{gid}")
+                                    inputs[gid]['b_cq_m'] = st.number_input("Médio (CQ)", 0, 20, key=f"bcqm_{gid}")
+                                    inputs[gid]['b_cq_a'] = st.number_input("Alto (CQ)", 0, 20, key=f"bcqa_{gid}")
+
+                            with st.expander(f"👐 2. RECEÇÕES ({gk_name})"):
+                                r1, r2 = st.columns(2)
+                                with r1:
+                                    inputs[gid]['r_sq_m'] = st.number_input("Médio (SQ)", 0, 20, key=f"rsqm_{gid}")
+                                    inputs[gid]['r_sq_a'] = st.number_input("Alto (SQ)", 0, 20, key=f"rsqa_{gid}")
+                                with r2:
+                                    inputs[gid]['r_cq_r'] = st.number_input("Rasteiro (CQ)", 0, 20, key=f"rcqr_{gid}")
+                                    inputs[gid]['r_cq_m'] = st.number_input("Médio (CQ)", 0, 20, key=f"rcqm_{gid}")
+                                    inputs[gid]['r_cq_a'] = st.number_input("Alto (CQ)", 0, 20, key=f"rcqa_{gid}")
+                                    inputs[gid]['r_cq_v'] = st.number_input("Varrimento", 0, 20, key=f"rcqv_{gid}")
+
+                            with st.expander(f"🧤 3. DESVIOS ({gk_name})"):
+                                d1, d2 = st.columns(2)
+                                with d1:
+                                    inputs[gid]['d_sq_p'] = st.number_input("Pé", 0, 20, key=f"dsqp_{gid}")
+                                    inputs[gid]['d_sq_mf'] = st.number_input("Médio Frontal", 0, 20, key=f"dsqmf_{gid}")
+                                    inputs[gid]['d_sq_ml'] = st.number_input("Médio Lateral", 0, 20, key=f"dsqml_{gid}")
+                                    inputs[gid]['d_sq_a1'] = st.number_input("Alto 1 Mão", 0, 20, key=f"dsqa1_{gid}")
+                                    inputs[gid]['d_sq_a2'] = st.number_input("Alto 2 Mãos", 0, 20, key=f"dsqa2_{gid}")
+                                with d2:
+                                    inputs[gid]['d_cq_v'] = st.number_input("Varrimento (CQ)", 0, 20, key=f"dcqv_{gid}")
+                                    inputs[gid]['d_cq_r1'] = st.number_input("Rasteiro 1 Mão", 0, 20, key=f"dcqr1_{gid}")
+                                    inputs[gid]['d_cq_r2'] = st.number_input("Rasteiro 2 Mãos", 0, 20, key=f"dcqr2_{gid}")
+                                    inputs[gid]['d_cq_a1'] = st.number_input("Alto 1 Mão (CQ)", 0, 20, key=f"dcqa1_{gid}")
+                                    inputs[gid]['d_cq_a2'] = st.number_input("Alto 2 Mãos (CQ)", 0, 20, key=f"dcqa2_{gid}")
+
+                            with st.expander(f"✈️ 4. EXTENSÃO E VOO ({gk_name})"):
+                                e1, e2 = st.columns(2)
+                                with e1:
+                                    inputs[gid]['e_rec'] = st.number_input("Ext. Receção", 0, 20, key=f"erec_{gid}")
+                                    inputs[gid]['e_d1'] = st.number_input("Ext. Desvio 1", 0, 20, key=f"ed1_{gid}")
+                                    inputs[gid]['e_d2'] = st.number_input("Ext. Desvio 2", 0, 20, key=f"ed2_{gid}")
+                                with e2:
+                                    inputs[gid]['v_rec'] = st.number_input("Voo Receção", 0, 20, key=f"vrec_{gid}")
+                                    inputs[gid]['v_d1'] = st.number_input("Voo Desvio 1", 0, 20, key=f"vd1_{gid}")
+                                    inputs[gid]['v_d2'] = st.number_input("Voo Desvio 2", 0, 20, key=f"vd2_{gid}")
+                                    inputs[gid]['v_dmc'] = st.number_input("Voo Mão Contrária", 0, 20, key=f"vdmc_{gid}")
+
+                            with st.expander(f"🚀 5. DEFESA DO ESPAÇO ({gk_name})"):
+                                c_sp1, c_sp2 = st.columns(2)
+                                inputs[gid]['de_cab'] = c_sp1.number_input("Cabeceamento", 0, 20, key=f"decab_{gid}")
+                                inputs[gid]['de_car'] = c_sp2.number_input("Carrinho", 0, 20, key=f"decar_{gid}")
+                                inputs[gid]['de_ali'] = c_sp1.number_input("Alívio", 0, 20, key=f"deali_{gid}")
+                                inputs[gid]['de_rec'] = c_sp2.number_input("Receção", 0, 20, key=f"derec_{gid}")
+
+                            with st.expander(f"⚔️ 6. DUELOS 1x1 ({gk_name})"):
+                                c_du1, c_du2 = st.columns(2)
+                                inputs[gid]['du_par'] = c_du1.number_input("Parede", 0, 20, key=f"dupar_{gid}")
+                                inputs[gid]['du_aba'] = c_du2.number_input("Abafo", 0, 20, key=f"duaba_{gid}")
+                                inputs[gid]['du_est'] = c_du1.number_input("Estrela", 0, 20, key=f"duest_{gid}")
+                                inputs[gid]['du_fro'] = c_du2.number_input("Frontal", 0, 20, key=f"dufro_{gid}")
+
+                            with st.expander(f"🎯 7. DISTRIBUIÇÃO ({gk_name})"):
+                                c_ds1, c_ds2 = st.columns(2)
+                                with c_ds1:
+                                    inputs[gid]['pa_c1'] = st.number_input("Passe Curto 1T", 0, 20, key=f"pac1_{gid}")
+                                    inputs[gid]['pa_c2'] = st.number_input("Passe Curto 2T", 0, 20, key=f"pac2_{gid}")
+                                    inputs[gid]['pa_l1'] = st.number_input("Passe Longo 1T", 0, 20, key=f"pal1_{gid}")
+                                    inputs[gid]['pa_l2'] = st.number_input("Passe Longo 2T", 0, 20, key=f"pal2_{gid}")
+                                with c_ds2:
+                                    inputs[gid]['di_cm'] = st.number_input("Mão Curta", 0, 20, key=f"dicm_{gid}")
+                                    inputs[gid]['di_lm'] = st.number_input("Mão Longa", 0, 20, key=f"dilm_{gid}")
+                                    inputs[gid]['di_pm'] = st.number_input("Mão Picada", 0, 20, key=f"dipm_{gid}")
+                                    inputs[gid]['di_vo'] = st.number_input("Volley", 0, 20, key=f"divo_{gid}")
+                                    inputs[gid]['di_cp'] = st.number_input("Pé Curta", 0, 20, key=f"dicp_{gid}")
+                                    inputs[gid]['di_lp'] = st.number_input("Pé Longa", 0, 20, key=f"dilp_{gid}")
+
+                            with st.expander(f"⚽ 8. ESQUEMAS TÁTICOS ({gk_name})"):
+                                c_et1, c_et2, c_et3 = st.columns(3)
+                                inputs[gid]['eto_cur'] = c_et1.number_input("PB Curto", 0, 20, key=f"etocur_{gid}")
+                                inputs[gid]['eto_med'] = c_et2.number_input("PB Médio", 0, 20, key=f"etomed_{gid}")
+                                inputs[gid]['eto_lon'] = c_et3.number_input("PB Longo", 0, 20, key=f"etolon_{gid}")
+
+                            with st.expander(f"🥅 9. CRUZAMENTOS ({gk_name})"):
+                                c_cr1, c_cr2 = st.columns(2)
+                                inputs[gid]['cr_rec'] = c_cr1.number_input("Receção", 0, 20, key=f"crrec_{gid}")
+                                inputs[gid]['cr_s1'] = c_cr2.number_input("Soco 1", 0, 20, key=f"crs1_{gid}")
+                                inputs[gid]['cr_s2'] = c_cr1.number_input("Soco 2", 0, 20, key=f"crs2_{gid}")
+                                inputs[gid]['cr_int'] = c_cr2.number_input("Interceção", 0, 20, key=f"crint_{gid}")
+
+                    if st.form_submit_button("💾 Guardar Jogo"):
+                        if not opponent: st.error("Falta adversário")
+                        else:
+                            date_s = match_date.strftime("%Y-%m-%d"); c = conn.cursor()
+                            c.execute("DELETE FROM matches WHERE user_id=? AND date=? AND opponent=?", (user, date_s, opponent))
+                            for gid, d in inputs.items():
+                                vals = (user, date_s, opponent, gid, d['gls'], d['sav'], result, d['rep'], d['rat'], match_type, d['min'],
+                                        d['sh_faced'], d['sh_off'], d['psy_comm'], d['psy_dec'], d['psy_pos'], d['psy_res'],
+                                        d['b_sq_r'], d['b_sq_m'], d['b_sq_a'], d['b_cq_r'], d['b_cq_m'], d['b_cq_a'],
+                                        d['r_sq_m'], d['r_sq_a'], d['r_cq_r'], d['r_cq_m'], d['r_cq_a'], d['r_cq_v'],
+                                        d['d_sq_p'], d['d_sq_mf'], d['d_sq_ml'], d['d_sq_a1'], d['d_sq_a2'], d['d_cq_v'], d['d_cq_r1'], d['d_cq_r2'], d['d_cq_a1'], d['d_cq_a2'],
+                                        d['e_rec'], d['e_d1'], d['e_d2'], d['v_rec'], d['v_d1'], d['v_d2'], d['v_dmc'], d['de_cab'], d['de_car'], d['de_ali'], d['de_rec'], d['du_par'], d['du_aba'], d['du_est'], d['du_fro'], d['pa_c1'], d['pa_c2'], d['pa_l1'], d['pa_l2'], d['di_cm'], d['di_lm'], d['di_pm'], d['di_vo'], d['di_cp'], d['di_lp'], d['cr_rec'], d['cr_s1'], d['cr_s2'], d['cr_int'], d['eto_cur'], d['eto_med'], d['eto_lon'])
+                                c.execute(f'''INSERT INTO matches (id, user_id, date, opponent, gk_id, goals_conceded, saves, result, report, rating, match_type, match_duration,
+                                    shots_faced, shots_off_target, psy_comm, psy_decision, psy_posture, psy_resilience,
+                                    db_bloq_sq_rast, db_bloq_sq_med, db_bloq_sq_alt, db_bloq_cq_rast, db_bloq_cq_med, db_bloq_cq_alt,
+                                    db_rec_sq_med, db_rec_sq_alt, db_rec_cq_rast, db_rec_cq_med, db_rec_cq_alt, db_rec_cq_varr,
+                                    db_desv_sq_pe, db_desv_sq_mfr, db_desv_sq_mlat, db_desv_sq_a1, db_desv_sq_a2, db_desv_cq_varr, db_desv_cq_r1, db_desv_cq_r2, db_desv_cq_a1, db_desv_cq_a2,
+                                    db_ext_rec, db_ext_desv_1, db_ext_desv_2, db_voo_rec, db_voo_desv_1, db_voo_desv_2, db_voo_desv_mc,
+                                    de_cabeca, de_carrinho, de_alivio, de_rececao,
+                                    duelo_parede, duelo_abafo, duelo_estrela, duelo_frontal,
+                                    pa_curto_1, pa_curto_2, pa_longo_1, pa_longo_2, dist_curta_mao, dist_longa_mao, dist_picada_mao, dist_volley, dist_curta_pe, dist_longa_pe,
+                                    cruz_rec_alta, cruz_soco_1, cruz_soco_2, cruz_int_rast,
+                                    eto_pb_curto, eto_pb_medio, eto_pb_longo
+                                ) VALUES (NULL, {",".join(["?"]*len(vals))})''', vals)
+                            conn.commit(); backup_to_drive(); st.success("Jogo Gravado!"); st.rerun()
+
+        # --- ABA 2: GERIR E EDITAR TOTALMENTE ---
+        with tab_manage:
+            st.subheader("📜 Histórico e Edição")
+            unique_games = pd.read_sql_query("SELECT DISTINCT date, opponent, result FROM matches WHERE user_id=? ORDER BY date DESC", conn, params=(user,))
+            
+            if not unique_games.empty:
+                game_opts = [f"{r['date']} | {r['opponent']} ({r['result']})" for _, r in unique_games.iterrows()]
+                sel_game_str = st.selectbox("Selecione um jogo:", game_opts)
+                
+                if sel_game_str:
+                    sel_date = sel_game_str.split(" | ")[0]
+                    sel_opp = sel_game_str.split(" | ")[1].split(" (")[0]
+                    
+                    # Editar Metadados
+                    with st.expander("✏️ Editar Detalhes Gerais (Data/Adversário)", expanded=False):
+                        with st.form("edit_meta"):
+                            c1, c2, c3 = st.columns(3)
+                            nd = c1.date_input("Nova Data", datetime.strptime(sel_date, "%Y-%m-%d"))
+                            no = c2.text_input("Novo Adv.", sel_opp); nr = c3.text_input("Novo Res.", sel_game_str.split("(")[1].replace(")",""))
+                            if st.form_submit_button("Atualizar Geral"):
+                                conn.cursor().execute("UPDATE matches SET date=?, opponent=?, result=? WHERE user_id=? AND date=? AND opponent=?", (nd.strftime("%Y-%m-%d"), no, nr, user, sel_date, sel_opp))
+                                conn.commit(); backup_to_drive(); st.success("Atualizado!"); st.rerun()
+
+                    # Lista de Atletas no Jogo para EDIÇÃO TOTAL
+                    st.write("---")
+                    st.write(f"**Atletas em: {sel_opp}**")
+                    
+                    rows = pd.read_sql_query("SELECT * FROM matches WHERE user_id=? AND date=? AND opponent=?", conn, params=(user, sel_date, sel_opp))
+                    gks_ref = pd.read_sql_query("SELECT id, name FROM goalkeepers", conn) 
+                    
+                    for _, row in rows.iterrows():
+                        # Nome do GR
+                        gk_name = gks_ref[gks_ref['id'] == row['gk_id']].iloc[0]['name'] if not gks_ref[gks_ref['id'] == row['gk_id']].empty else "Desconhecido"
+                        
+                        with st.expander(f"👤 {gk_name} (Nota: {row['rating']}) - Clica para Editar TUDO"):
+                            with st.form(f"edit_full_{row['id']}"):
+                                st.markdown("#### 1. Dados Gerais")
+                                c1, c2, c3, c4 = st.columns(4)
+                                e_min = c1.number_input("Minutos Jogados", 0, 120, row['match_duration'], key=f"em_{row['id']}")
+                                e_gls = c2.number_input("Golos Sofridos", 0, 20, row['goals_conceded'], key=f"eg_{row['id']}")
+                                e_sav = c3.number_input("Defesas (Saves)", 0, 50, row['saves'], key=f"es_{row['id']}")
+                                e_rat = c4.slider("Nota Final", 1, 10, row['rating'], key=f"er_{row['id']}")
+                                
+                                st.markdown("#### 2. Mental & Remates")
+                                c5, c6 = st.columns(2)
+                                e_sf = c5.number_input("Remates à Baliza (No Alvo)", 0, 50, row.get('shots_faced', 0) or 0, key=f"esf_{row['id']}")
+                                e_so = c6.number_input("Remates para Fora", 0, 50, row.get('shots_off_target', 0) or 0, key=f"eso_{row['id']}")
+                                
+                                c7, c8, c9, c10 = st.columns(4)
+                                ep_c = c7.slider("Comunicação", 1, 10, row.get('psy_comm', 5) or 5, key=f"epc_{row['id']}")
+                                ep_d = c8.slider("Tomada de Decisão", 1, 10, row.get('psy_decision', 5) or 5, key=f"epd_{row['id']}")
+                                ep_p = c9.slider("Postura", 1, 10, row.get('psy_posture', 5) or 5, key=f"epp_{row['id']}")
+                                ep_r = c10.slider("Resiliência", 1, 10, row.get('psy_resilience', 5) or 5, key=f"epr_{row['id']}")
+                                
+                                e_rep = st.text_area("Análise Individual", row['report'], key=f"erep_{row['id']}")
+
+                                # --- TODAS AS 72 VARIÁVEIS TÉCNICAS (NOMES COMPLETOS) ---
+                                st.markdown("#### 3. Detalhe Técnico Completo")
+                                
+                                with st.expander("🧱 1. DEFESA DE BALIZA: BLOQUEIOS"):
+                                    eb1, eb2 = st.columns(2)
+                                    with eb1:
+                                        st.caption("Sem Queda")
+                                        e_bsqr = st.number_input("Bloqueio Rasteiro", 0, 20, row.get('db_bloq_sq_rast',0) or 0, key=f"eb1_{row['id']}")
+                                        e_bsqm = st.number_input("Bloqueio Médio", 0, 20, row.get('db_bloq_sq_med',0) or 0, key=f"eb2_{row['id']}")
+                                        e_bsqa = st.number_input("Bloqueio Alto", 0, 20, row.get('db_bloq_sq_alt',0) or 0, key=f"eb3_{row['id']}")
+                                    with eb2:
+                                        st.caption("Com Queda")
+                                        e_bcqr = st.number_input("Bloqueio Rasteiro (CQ)", 0, 20, row.get('db_bloq_cq_rast',0) or 0, key=f"eb4_{row['id']}")
+                                        e_bcqm = st.number_input("Bloqueio Médio (CQ)", 0, 20, row.get('db_bloq_cq_med',0) or 0, key=f"eb5_{row['id']}")
+                                        e_bcqa = st.number_input("Bloqueio Alto (CQ)", 0, 20, row.get('db_bloq_cq_alt',0) or 0, key=f"eb6_{row['id']}")
+
+                                with st.expander("👐 2. DEFESA DE BALIZA: RECEÇÕES"):
+                                    er1, er2 = st.columns(2)
+                                    with er1:
+                                        st.caption("Sem Queda")
+                                        e_rsqm = st.number_input("Receção Média", 0, 20, row.get('db_rec_sq_med',0) or 0, key=f"er1_{row['id']}")
+                                        e_rsqa = st.number_input("Receção Alta", 0, 20, row.get('db_rec_sq_alt',0) or 0, key=f"er2_{row['id']}")
+                                    with er2:
+                                        st.caption("Com Queda")
+                                        e_rcqr = st.number_input("Receção Rasteira", 0, 20, row.get('db_rec_cq_rast',0) or 0, key=f"er3_{row['id']}")
+                                        e_rcqm = st.number_input("Receção Média (CQ)", 0, 20, row.get('db_rec_cq_med',0) or 0, key=f"er4_{row['id']}")
+                                        e_rcqa = st.number_input("Receção Alta (CQ)", 0, 20, row.get('db_rec_cq_alt',0) or 0, key=f"er5_{row['id']}")
+                                        e_rcqv = st.number_input("Receção em Varrimento", 0, 20, row.get('db_rec_cq_varr',0) or 0, key=f"er6_{row['id']}")
+
+                                with st.expander("🧤 3. DEFESA DE BALIZA: DESVIOS"):
+                                    ed1, ed2 = st.columns(2)
+                                    with ed1:
+                                        st.caption("Sem Queda")
+                                        e_dsqp = st.number_input("Desvio com o Pé", 0, 20, row.get('db_desv_sq_pe',0) or 0, key=f"ed1_{row['id']}")
+                                        e_dsqmf = st.number_input("Desvio Médio Frontal", 0, 20, row.get('db_desv_sq_mfr',0) or 0, key=f"ed2_{row['id']}")
+                                        e_dsqml = st.number_input("Desvio Médio Lateral", 0, 20, row.get('db_desv_sq_mlat',0) or 0, key=f"ed3_{row['id']}")
+                                        e_dsqa1 = st.number_input("Desvio Alto (1 Mão)", 0, 20, row.get('db_desv_sq_a1',0) or 0, key=f"ed4_{row['id']}")
+                                        e_dsqa2 = st.number_input("Desvio Alto (2 Mãos)", 0, 20, row.get('db_desv_sq_a2',0) or 0, key=f"ed5_{row['id']}")
+                                    with ed2:
+                                        st.caption("Com Queda")
+                                        e_dcqv = st.number_input("Desvio em Varrimento", 0, 20, row.get('db_desv_cq_varr',0) or 0, key=f"ed6_{row['id']}")
+                                        e_dcqr1 = st.number_input("Desvio Rasteiro (1 Mão)", 0, 20, row.get('db_desv_cq_r1',0) or 0, key=f"ed7_{row['id']}")
+                                        e_dcqr2 = st.number_input("Desvio Rasteiro (2 Mãos)", 0, 20, row.get('db_desv_cq_r2',0) or 0, key=f"ed8_{row['id']}")
+                                        e_dcqa1 = st.number_input("Desvio Alto (1 Mão CQ)", 0, 20, row.get('db_desv_cq_a1',0) or 0, key=f"ed9_{row['id']}")
+                                        e_dcqa2 = st.number_input("Desvio Alto (2 Mãos CQ)", 0, 20, row.get('db_desv_cq_a2',0) or 0, key=f"ed10_{row['id']}")
+
+                                with st.expander("✈️ 4. EXTENSÃO E VOO"):
+                                    ee1, ee2 = st.columns(2)
+                                    with ee1:
+                                        st.caption("Extensão (Sem Fase de Voo)")
+                                        e_erec = st.number_input("Extensão e Receção", 0, 20, row.get('db_ext_rec',0) or 0, key=f"ee1_{row['id']}")
+                                        e_ed1 = st.number_input("Extensão e Desvio (1 Mão)", 0, 20, row.get('db_ext_desv_1',0) or 0, key=f"ee2_{row['id']}")
+                                        e_ed2 = st.number_input("Extensão e Desvio (2 Mãos)", 0, 20, row.get('db_ext_desv_2',0) or 0, key=f"ee3_{row['id']}")
+                                    with ee2:
+                                        st.caption("Voo (Com Fase Aérea)")
+                                        e_vrec = st.number_input("Voo e Receção", 0, 20, row.get('db_voo_rec',0) or 0, key=f"ee4_{row['id']}")
+                                        e_vd1 = st.number_input("Voo e Desvio (1 Mão)", 0, 20, row.get('db_voo_desv_1',0) or 0, key=f"ee5_{row['id']}")
+                                        e_vd2 = st.number_input("Voo e Desvio (2 Mãos)", 0, 20, row.get('db_voo_desv_2',0) or 0, key=f"ee6_{row['id']}")
+                                        e_vdmc = st.number_input("Voo Mão Contrária", 0, 20, row.get('db_voo_desv_mc',0) or 0, key=f"ee7_{row['id']}")
+
+                                with st.expander("🚀 5. DEFESA DO ESPAÇO"):
+                                    esp1, esp2 = st.columns(2)
+                                    e_decab = esp1.number_input("Cabeceamento fora da área", 0, 20, row.get('de_cabeca',0) or 0, key=f"esp1_{row['id']}")
+                                    e_decar = esp2.number_input("Corte de Carrinho", 0, 20, row.get('de_carrinho',0) or 0, key=f"esp2_{row['id']}")
+                                    e_deali = esp1.number_input("Alívio (Pé/Mão)", 0, 20, row.get('de_alivio',0) or 0, key=f"esp3_{row['id']}")
+                                    e_derec = esp2.number_input("Receção/Controlo do Espaço", 0, 20, row.get('de_rececao',0) or 0, key=f"esp4_{row['id']}")
+
+                                with st.expander("⚔️ 6. DUELOS 1x1"):
+                                    edu1, edu2 = st.columns(2)
+                                    e_dupar = edu1.number_input("Parede / Mancha", 0, 20, row.get('duelo_parede',0) or 0, key=f"edu1_{row['id']}")
+                                    e_duaba = edu2.number_input("Abafo (Ataque à Bola)", 0, 20, row.get('duelo_abafo',0) or 0, key=f"edu2_{row['id']}")
+                                    e_duest = edu1.number_input("Técnica de Estrela (K-Block)", 0, 20, row.get('duelo_estrela',0) or 0, key=f"edu3_{row['id']}")
+                                    e_dufro = edu2.number_input("Bloqueio Frontal", 0, 20, row.get('duelo_frontal',0) or 0, key=f"edu4_{row['id']}")
+
+                                with st.expander("🎯 7. DISTRIBUIÇÃO"):
+                                    eds1, eds2 = st.columns(2)
+                                    with eds1:
+                                        st.caption("Jogo de Pés")
+                                        e_pac1 = st.number_input("Passe Curto (1 Toque)", 0, 20, row.get('pa_curto_1',0) or 0, key=f"eds1_{row['id']}")
+                                        e_pac2 = st.number_input("Passe Curto (2 Toques)", 0, 20, row.get('pa_curto_2',0) or 0, key=f"eds2_{row['id']}")
+                                        e_pal1 = st.number_input("Passe Longo (1 Toque)", 0, 20, row.get('pa_longo_1',0) or 0, key=f"eds3_{row['id']}")
+                                        e_pal2 = st.number_input("Passe Longo (2 Toques)", 0, 20, row.get('pa_longo_2',0) or 0, key=f"eds4_{row['id']}")
+                                    with eds2:
+                                        st.caption("Reposição de Mão/Pé")
+                                        e_dicm = st.number_input("Mão Curta (Rasteira)", 0, 20, row.get('dist_curta_mao',0) or 0, key=f"eds5_{row['id']}")
+                                        e_dilm = st.number_input("Mão Longa (Ombro)", 0, 20, row.get('dist_longa_mao',0) or 0, key=f"eds6_{row['id']}")
+                                        e_dipm = st.number_input("Mão Picada (Bata)", 0, 20, row.get('dist_picada_mao',0) or 0, key=f"eds7_{row['id']}")
+                                        e_divo = st.number_input("Pontapé de Volei/Lateral", 0, 20, row.get('dist_volley',0) or 0, key=f"eds8_{row['id']}")
+                                        e_dicp = st.number_input("Pontapé Bola Corrida (Curto)", 0, 20, row.get('dist_curta_pe',0) or 0, key=f"eds9_{row['id']}")
+                                        e_dilp = st.number_input("Pontapé Bola Corrida (Longo)", 0, 20, row.get('dist_longa_pe',0) or 0, key=f"eds10_{row['id']}")
+
+                                with st.expander("⚽ 8. ESQUEMAS TÁTICOS (Pontapé de Baliza)"):
+                                    c_et1, c_et2, c_et3 = st.columns(3)
+                                    e_etoc = c_et1.number_input("PB Curto", 0, 20, row.get('eto_pb_curto',0) or 0, key=f"eet1_{row['id']}")
+                                    e_etom = c_et2.number_input("PB Médio", 0, 20, row.get('eto_pb_medio',0) or 0, key=f"eet2_{row['id']}")
+                                    e_etol = c_et3.number_input("PB Longo", 0, 20, row.get('eto_pb_longo',0) or 0, key=f"eet3_{row['id']}")
+
+                                with st.expander("🥅 9. CRUZAMENTOS"):
+                                    ecr1, ecr2 = st.columns(2)
+                                    e_crrec = ecr1.number_input("Receção Alta (Segura)", 0, 20, row.get('cruz_rec_alta',0) or 0, key=f"ecr1_{row['id']}")
+                                    e_crs1 = ecr2.number_input("Soco (1 Mão)", 0, 20, row.get('cruz_soco_1',0) or 0, key=f"ecr2_{row['id']}")
+                                    e_crs2 = ecr1.number_input("Soco (2 Mãos)", 0, 20, row.get('cruz_soco_2',0) or 0, key=f"ecr3_{row['id']}")
+                                    e_crint = ecr2.number_input("Interceção Rasteira", 0, 20, row.get('cruz_int_rast',0) or 0, key=f"ecr4_{row['id']}")
+
+                                c_upd, c_del = st.columns([3, 1])
+                                if c_upd.form_submit_button("💾 Atualizar Ficha Individual"):
+                                    # UPDATE GIGANTE COM TUDO
+                                    conn.cursor().execute("""
+                                        UPDATE matches SET 
+                                            match_duration=?, goals_conceded=?, saves=?, rating=?, report=?,
+                                            shots_faced=?, shots_off_target=?, 
+                                            psy_comm=?, psy_decision=?, psy_posture=?, psy_resilience=?, 
+                                            db_bloq_sq_rast=?, db_bloq_sq_med=?, db_bloq_sq_alt=?, db_bloq_cq_rast=?, db_bloq_cq_med=?, db_bloq_cq_alt=?,
+                                            db_rec_sq_med=?, db_rec_sq_alt=?, db_rec_cq_rast=?, db_rec_cq_med=?, db_rec_cq_alt=?, db_rec_cq_varr=?,
+                                            db_desv_sq_pe=?, db_desv_sq_mfr=?, db_desv_sq_mlat=?, db_desv_sq_a1=?, db_desv_sq_a2=?, 
+                                            db_desv_cq_varr=?, db_desv_cq_r1=?, db_desv_cq_r2=?, db_desv_cq_a1=?, db_desv_cq_a2=?,
+                                            db_ext_rec=?, db_ext_desv_1=?, db_ext_desv_2=?, db_voo_rec=?, db_voo_desv_1=?, db_voo_desv_2=?, db_voo_desv_mc=?,
+                                            de_cabeca=?, de_carrinho=?, de_alivio=?, de_rececao=?,
+                                            duelo_parede=?, duelo_abafo=?, duelo_estrela=?, duelo_frontal=?,
+                                            pa_curto_1=?, pa_curto_2=?, pa_longo_1=?, pa_longo_2=?, 
+                                            dist_curta_mao=?, dist_longa_mao=?, dist_picada_mao=?, dist_volley=?, dist_curta_pe=?, dist_longa_pe=?,
+                                            cruz_rec_alta=?, cruz_soco_1=?, cruz_soco_2=?, cruz_int_rast=?,
+                                            eto_pb_curto=?, eto_pb_medio=?, eto_pb_longo=?
+                                        WHERE id=?""", 
+                                        (e_min, e_gls, e_sav, e_rat, e_rep,
+                                         e_sf, e_so, ep_c, ep_d, ep_p, ep_r,
+                                         e_bsqr, e_bsqm, e_bsqa, e_bcqr, e_bcqm, e_bcqa,
+                                         e_rsqm, e_rsqa, e_rcqr, e_rcqm, e_rcqa, e_rcqv,
+                                         e_dsqp, e_dsqmf, e_dsqml, e_dsqa1, e_dsqa2,
+                                         e_dcqv, e_dcqr1, e_dcqr2, e_dcqa1, e_dcqa2,
+                                         e_erec, e_ed1, e_ed2, e_vrec, e_vd1, e_vd2, e_vdmc,
+                                         e_decab, e_decar, e_deali, e_derec,
+                                         e_dupar, e_duaba, e_duest, e_dufro,
+                                         e_pac1, e_pac2, e_pal1, e_pal2,
+                                         e_dicm, e_dilm, e_dipm, e_divo, e_dicp, e_dilp,
+                                         e_crrec, e_crs1, e_crs2, e_crint,
+                                         e_etoc, e_etom, e_etol,
+                                         row['id']))
+                                    conn.commit(); backup_to_drive(); st.success("Atualizado!"); st.rerun()
+                                
+                                if c_del.form_submit_button("🗑️ Remover Atleta do Jogo"):
+                                    conn.cursor().execute("DELETE FROM matches WHERE id=?", (row['id'],))
+                                    conn.commit(); backup_to_drive(); st.warning("Removido."); st.rerun()
+                    st.divider()
+                    if st.button("🗑️ APAGAR JOGO COMPLETO", type="primary"):
+                        conn.cursor().execute("DELETE FROM matches WHERE user_id=? AND date=? AND opponent=?", (user, sel_date, sel_opp))
+                        conn.commit(); backup_to_drive(); st.warning("Jogo apagado."); st.rerun()
+            else:
+                st.info("Sem jogos.")
+        
+        # SÓ FECHA A CONEXÃO AQUI NO FINAL DE TUDO
+        conn.close()
     # --- 8. CALENDÁRIO ---
     elif menu == "Calendário":
         st.header("📅 Calendário")
