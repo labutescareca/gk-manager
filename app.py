@@ -1223,50 +1223,43 @@ def main_app():
             micros = pd.read_sql_query("SELECT * FROM microcycles WHERE user_id=? ORDER BY start_date DESC", conn, params=(user,))
             
             if not micros.empty:
-                # Selectbox para escolher a semana
-                m_opts = [f"{m['title']} (Início: {m['start_date']})" for _, m in micros.iterrows()]
-                sel_m_str = st.selectbox("Selecionar Semana para Análise", m_opts)
+                # Cria a lista de opções para o menu
+                m_opts = [f"{m['title']} ({m['start_date']})" for _, m in micros.iterrows()]
+                sm = st.selectbox("Selecionar Semana", m_opts)
                 
-                # Identificar a semana selecionada
-                sel_m = micros[micros.apply(lambda x: f"{x['title']} ({x['start_date']})" == sel_m_str, axis=1)].iloc[0]
+                # --- CORREÇÃO DO ERRO AQUI ---
+                # Filtra a semana escolhida
+                filtro_semana = micros[micros.apply(lambda x: f"{x['title']} ({x['start_date']})" == sm, axis=1)]
                 
-                # Calcular datas da semana
-                s_dt = datetime.strptime(sel_m['start_date'], "%Y-%m-%d").date()
-                e_dt = s_dt + timedelta(days=6)
-                
-                st.info(f"Análise de **{s_dt}** a **{e_dt}**")
-                
-                # Tabela de Performance (Média das notas da semana)
-                st.subheader("📊 Performance Média Semanal")
-                avg_ratings = pd.read_sql_query("""
-                    SELECT g.name as Atleta, AVG(tr.rating) as 'Média Semanal', COUNT(tr.id) as 'Treinos Avaliados'
-                    FROM training_ratings tr
-                    JOIN goalkeepers g ON tr.gk_id = g.id
-                    WHERE tr.user_id = ? AND tr.date >= ? AND tr.date <= ?
-                    GROUP BY g.name
-                    ORDER BY 'Média Semanal' DESC
-                """, conn, params=(user, s_dt, e_dt))
-                
-                if not avg_ratings.empty:
-                    st.dataframe(avg_ratings.style.format({"Média Semanal": "{:.1f}"}), use_container_width=True)
+                # VERIFICAÇÃO DE SEGURANÇA: Só tenta ler se encontrou algo
+                if not filtro_semana.empty:
+                    sel_m = filtro_semana.iloc[0]
+                    
+                    s_dt = datetime.strptime(sel_m['start_date'], "%Y-%m-%d").date()
+                    e_dt = s_dt + timedelta(days=6)
+                    
+                    st.info(f"De {s_dt} a {e_dt}")
+                    
+                    # Media Semanal
+                    avg = pd.read_sql_query("SELECT g.name as Atleta, AVG(tr.rating) as Media FROM training_ratings tr JOIN goalkeepers g ON tr.gk_id=g.id WHERE tr.user_id=? AND tr.date >= ? AND tr.date <= ? GROUP BY g.name", conn, params=(user, s_dt, e_dt))
+                    
+                    if not avg.empty: 
+                        st.dataframe(avg.style.format({"Media": "{:.1f}"}), use_container_width=True)
+                    else: 
+                        st.caption("Sem avaliações nesta semana.")
+                    
+                    with st.form("mrep"):
+                        mt = st.text_area("Relatório do Microciclo", sel_m['report'] if sel_m['report'] else "")
+                        if st.form_submit_button("Guardar"): 
+                            conn.cursor().execute("UPDATE microcycles SET report=? WHERE id=?", (mt, int(sel_m['id'])))
+                            conn.commit()
+                            backup_to_drive()
+                            st.success("Guardado!")
                 else:
-                    st.caption("Ainda não fizeste avaliações individuais nesta semana.")
-                
-                st.divider()
-                
-                # Relatório Final do Microciclo
-                st.subheader("📝 Relatório Final do Microciclo")
-                with st.form("micro_rep_form"):
-                    mr_txt = st.text_area("Conclusões da Semana", value=sel_m['report'] if sel_m['report'] else "", height=200, placeholder="Ex: Boa evolução no jogo de pés, foco na próxima semana em cruzamentos...")
-                    if st.form_submit_button("Guardar Relatório Semanal"):
-                        conn.cursor().execute("UPDATE microcycles SET report=? WHERE id=?", (mr_txt, int(sel_m['id'])))
-                        conn.commit()
-                        backup_to_drive()
-                        st.success("Relatório da semana guardado!")
-            else:
-                st.info("Cria semanas no menu 'Gestão Semanal' primeiro.")
+                    st.warning("Erro a carregar semana. Por favor recarrega a página.")
+            else: 
+                st.info("Cria semanas primeiro.")
             conn.close()
-
     # --- 6. EVOLUÇÃO ---
     elif menu == "Evolução do Atleta":
         st.header("📈 Evolução")
