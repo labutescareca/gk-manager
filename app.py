@@ -21,7 +21,7 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 # 1. CONFIGURAÇÃO DA PÁGINA
 # ==========================================
 st.set_page_config(
-    page_title="GK Manager Pro V46",
+    page_title="GK Manager Pro V53",
     layout="wide",
     page_icon="🧤"
 )
@@ -35,7 +35,9 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 # ==========================================
 
 def get_drive_service():
-    """Autentica no Google Drive usando os segredos do Streamlit."""
+    """
+    Autentica no Google Drive usando os segredos do Streamlit.
+    """
     try:
         if "gcp_service_account" in st.secrets:
             creds = service_account.Credentials.from_service_account_info(
@@ -48,10 +50,12 @@ def get_drive_service():
         return None
 
 def sync_download_db():
-    """Tenta baixar a versão mais recente da base de dados do Google Drive."""
+    """
+    Tenta baixar a versão mais recente da base de dados do Google Drive.
+    """
     service = get_drive_service()
     
-    # Verificar se existe folder_id nos segredos
+    # Tenta obter o ID da pasta
     if "drive" in st.secrets:
         folder_id = st.secrets["drive"]["folder_id"]
     else:
@@ -299,7 +303,22 @@ def check_db_updates():
                     link TEXT, 
                     description TEXT)''')
 
-    # Garantir que todas as alterações estruturais são salvas
+    # 13. Tabela de Lesões (NOVA V52)
+    c.execute('''CREATE TABLE IF NOT EXISTS injuries (
+                    id INTEGER PRIMARY KEY,
+                    gk_id INTEGER,
+                    injury_date TEXT,
+                    recovery_weeks INTEGER,
+                    description TEXT,
+                    active INTEGER)''') 
+
+    # --- MIGRAÇÕES E CORREÇÕES AUTOMÁTICAS ---
+    # Adicionar colunas novas se a base de dados for antiga
+    try:
+        c.execute("ALTER TABLE sessions ADD COLUMN match_time TEXT")
+    except:
+        pass # Coluna já existe
+
     conn.commit()
     conn.close()
 
@@ -359,7 +378,13 @@ def create_training_pdf(user, session_info, athletes, drills_config, drills_deta
     
     # Cabeçalho da Sessão
     pdf.cell(0, 10, txt=safe_text(f"Treinador: {user}"), ln=1, align='L')
-    pdf.cell(0, 10, txt=safe_text(f"Data: {session_info['start_date']} | Tipo: {session_info['type']}"), ln=1, align='L', fill=True)
+    
+    # Linha da Data e Hora
+    time_str = ""
+    if session_info.get('match_time'):
+        time_str = f" | Hora: {session_info['match_time']}"
+        
+    pdf.cell(0, 10, txt=safe_text(f"Data: {session_info['start_date']}{time_str} | Tipo: {session_info['type']}"), ln=1, align='L', fill=True)
     status_txt = session_info.get('status', 'Agendado')
     pdf.cell(0, 10, txt=safe_text(f"Foco: {session_info['title']} ({status_txt})"), ln=1, align='L')
     pdf.ln(5)
@@ -458,7 +483,7 @@ if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 if 'username' not in st.session_state: st.session_state['username'] = ''
 
 def login_page():
-    st.title("🔐 GK Manager Pro V46")
+    st.title("🔐 GK Manager Pro V52")
     menu = ["Login", "Criar Conta"]
     choice = st.selectbox("Menu", menu)
     
@@ -485,7 +510,7 @@ def login_page():
                 conn.cursor().execute("INSERT INTO users VALUES (?,?)", (new_u, make_hashes(new_p)))
                 conn.commit()
                 st.success("Conta criada com sucesso!")
-                backup_to_drive() # Tenta fazer backup logo a seguir
+                backup_to_drive()
             except:
                 st.warning("Esse utilizador já existe.")
             conn.close()
@@ -497,7 +522,6 @@ def main_app():
     user = st.session_state['username']
     st.sidebar.title(f"👤 {user}")
     
-    # MENU DE NAVEGAÇÃO COMPLETO
     menu = st.sidebar.radio("Navegação", 
         ["Dashboard Geral", 
          "Gestão Semanal", 
@@ -513,38 +537,112 @@ def main_app():
          "💾 Backups & Dados"])
     
     if st.sidebar.button("Sair"):
-        backup_to_drive() # Backup de segurança ao sair
+        backup_to_drive()
         st.session_state['logged_in'] = False
         st.rerun()
 
-    # --- 0. DASHBOARD GERAL ---
+    # --- 0. DASHBOARD GERAL (NOVO V52 - KPIs & Lesões) ---
     if menu == "Dashboard Geral":
-        st.header("📊 Visão Geral da Época")
+        st.header("📊 Centro de Comando")
+        
         conn = get_db_connection()
+        today_str = date.today().strftime("%Y-%m-%d")
         
-        # Estatísticas Rápidas
-        n_treinos = conn.execute("SELECT count(*) FROM sessions WHERE user_id=? AND type='Treino' AND (status IS NULL OR status != 'Cancelado')", (user,)).fetchone()[0]
-        n_descanso = conn.execute("SELECT count(*) FROM sessions WHERE user_id=? AND type='Descanso'", (user,)).fetchone()[0]
+        # 1. KPIs DE PERFORMANCE
+        st.subheader("🔥 Performance da Época")
+        col1, col2, col3, col4 = st.columns(4)
         
-        jogos_oficiais = conn.execute("SELECT count(*) FROM matches WHERE user_id=? AND match_type='Oficial'", (user,)).fetchone()[0]
-        jogos_amigaveis = conn.execute("SELECT count(*) FROM matches WHERE user_id=? AND match_type='Amigável'", (user,)).fetchone()[0]
+        total_games = conn.execute("SELECT count(*) FROM matches WHERE user_id=?", (user,)).fetchone()[0]
+        clean_sheets = conn.execute("SELECT count(*) FROM matches WHERE user_id=? AND goals_conceded = 0", (user,)).fetchone()[0]
+        goals_conc = conn.execute("SELECT sum(goals_conceded) FROM matches WHERE user_id=?", (user,)).fetchone()[0]
+        total_saves = conn.execute("SELECT sum(saves) FROM matches WHERE user_id=?", (user,)).fetchone()[0]
+        
+        goals_conc = goals_conc if goals_conc else 0
+        total_saves = total_saves if total_saves else 0
+        avg_goals = goals_conc / total_games if total_games > 0 else 0
+        
+        col1.metric("🛡️ Clean Sheets", clean_sheets)
+        col2.metric("🥅 Média Golos Sofridos", f"{avg_goals:.2f}")
+        col3.metric("🧤 Total Defesas", total_saves)
+        col4.metric("🏆 Jogos Realizados", total_games)
+        
+        st.divider()
+        
+        # 2. PAINEL OPERACIONAL
+        c_left, c_right = st.columns([2, 1])
+        
+        with c_left:
+            st.subheader("📅 Próxima Atividade")
+            next_sess = pd.read_sql_query(f"SELECT * FROM sessions WHERE user_id=? AND start_date >= '{today_str}' AND (status IS NULL OR status != 'Cancelado') ORDER BY start_date ASC LIMIT 1", conn, params=(user,))
+            
+            if not next_sess.empty:
+                ns = next_sess.iloc[0]
+                days_left = (datetime.strptime(ns['start_date'], "%Y-%m-%d").date() - date.today()).days
+                
+                badge = "🔴 HOJE" if days_left == 0 else ("🟠 AMANHÃ" if days_left == 1 else f"🔵 Em {days_left} dias")
+                
+                with st.container(border=True):
+                    st.markdown(f"### {badge} : {ns['type']}")
+                    st.write(f"**Data:** {ns['start_date']} | **Hora:** {ns.get('match_time', '--:--')}")
+                    
+                    if ns['type'] == 'Jogo':
+                        st.write(f"**Adversário:** {ns.get('opponent','Indefinido')} ({ns.get('location','Casa')})")
+                    elif ns['type'] == 'Treino':
+                        st.write(f"**Foco:** {ns['title']}")
+            else:
+                st.info("Sem atividades futuras agendadas.")
+            
+            st.markdown("---")
+            st.subheader("📉 Forma (Últimos 5 Jogos)")
+            last_5 = pd.read_sql_query("SELECT opponent, goals_conceded FROM matches WHERE user_id=? ORDER BY date DESC LIMIT 5", conn, params=(user,))
+            if not last_5.empty:
+                last_5 = last_5.iloc[::-1] # Inverter para mostrar cronologicamente
+                st.line_chart(last_5.set_index("opponent")['goals_conceded'])
+            else:
+                st.caption("Sem dados suficientes para gráfico.")
+
+        with c_right:
+            st.subheader("🚑 Boletim Clínico")
+            
+            # Buscar lesões ativas na tabela injuries
+            active_injuries = pd.read_sql_query("""
+                SELECT g.name, i.injury_date, i.recovery_weeks, i.description 
+                FROM injuries i 
+                JOIN goalkeepers g ON i.gk_id = g.id 
+                WHERE i.active = 1 AND g.user_id = ?
+            """, conn, params=(user,))
+            
+            if not active_injuries.empty:
+                for _, inj in active_injuries.iterrows():
+                    d_inj = datetime.strptime(inj['injury_date'], "%Y-%m-%d").date()
+                    d_ret = d_inj + timedelta(weeks=inj['recovery_weeks'])
+                    
+                    with st.container(border=True):
+                        st.markdown(f"**🤕 {inj['name']}**")
+                        st.caption(f"{inj['description']}")
+                        st.write(f"Prev. Regresso: **{d_ret.strftime('%d/%m')}**")
+            else:
+                st.success("✅ Todo o plantel apto!")
+            
+            st.divider()
+            
+            st.subheader("⚠️ Pendentes")
+            pending = conn.execute(f"SELECT count(*) FROM sessions WHERE user_id=? AND start_date < '{today_str}' AND (report IS NULL OR report = '') AND type IN ('Treino','Jogo') AND (status IS NULL OR status != 'Cancelado')", (user,)).fetchone()[0]
+            
+            if pending > 0:
+                st.warning(f"Tens **{pending}** relatórios em atraso.")
+            else:
+                st.caption("Todos os relatórios em dia.")
         
         conn.close()
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("⚽ Treinos Realizados", n_treinos)
-        col2.metric("🏆 Jogos Oficiais", jogos_oficiais)
-        col3.metric("🤝 Jogos Amigáveis", jogos_amigaveis)
-        col4.metric("💤 Dias Descanso", n_descanso)
-        
-        st.image("https://images.unsplash.com/photo-1551280857-2b963e3d43b5?auto=format&fit=crop&w=1920&q=80", caption="GK Manager Pro - Dashboard")
 
-    # --- 1. GESTÃO SEMANAL ---
+    # --- 1. GESTÃO SEMANAL (V52 - HORA DO TREINO) ---
     elif menu == "Gestão Semanal":
         st.header("📆 Planeamento Semanal")
-        tab1, tab2 = st.tabs(["1. Criar Semana", "2. Planear Dias"])
+        tab1, tab2 = st.tabs(["1. Criar e Gerir Semanas", "2. Planear Dias"])
         
         with tab1:
+            st.subheader("➕ Criar Nova Semana")
             with st.form("new_micro"):
                 c1, c2 = st.columns(2)
                 mt = c1.text_input("Nome da Semana (ex: Microciclo 34)")
@@ -557,6 +655,53 @@ def main_app():
                     conn.commit(); conn.close()
                     backup_to_drive()
                     st.success("Semana Criada com Sucesso!")
+                    st.rerun()
+            
+            st.divider()
+            st.subheader("⚙️ Gerir Semanas Existentes")
+            
+            conn = get_db_connection()
+            micros_exist = pd.read_sql_query("SELECT * FROM microcycles WHERE user_id=? ORDER BY start_date DESC", conn, params=(user,))
+            conn.close()
+            
+            if not micros_exist.empty:
+                week_opts = [f"{row['title']} (Início: {row['start_date']})" for _, row in micros_exist.iterrows()]
+                sel_week_str = st.selectbox("Selecionar Semana para Editar/Apagar", week_opts)
+                
+                sel_row = micros_exist[micros_exist.apply(lambda x: f"{x['title']} (Início: {x['start_date']})" == sel_week_str, axis=1)].iloc[0]
+                mid = int(sel_row['id'])
+                
+                with st.form(f"edit_micro_{mid}"):
+                    ce1, ce2 = st.columns(2)
+                    new_title = ce1.text_input("Editar Nome", value=sel_row['title'])
+                    
+                    try:
+                        d_val = datetime.strptime(sel_row['start_date'], "%Y-%m-%d").date()
+                    except:
+                        d_val = date.today()
+                        
+                    new_date = ce2.date_input("Editar Início", value=d_val)
+                    new_goal = st.text_area("Editar Objetivo", value=sel_row['goal'])
+                    
+                    if st.form_submit_button("💾 Atualizar Semana"):
+                        conn = get_db_connection()
+                        conn.cursor().execute("UPDATE microcycles SET title=?, start_date=?, goal=? WHERE id=?", (new_title, new_date, new_goal, mid))
+                        conn.commit(); conn.close()
+                        backup_to_drive()
+                        st.success("Semana atualizada!")
+                        st.rerun()
+                
+                with st.popover("🗑️ Apagar Semana"):
+                    st.write(f"Tem a certeza que quer apagar a semana **{sel_row['title']}**?")
+                    if st.button("Sim, apagar permanentemente", key=f"del_micro_{mid}"):
+                        conn = get_db_connection()
+                        conn.cursor().execute("DELETE FROM microcycles WHERE id=?", (mid,))
+                        conn.commit(); conn.close()
+                        backup_to_drive()
+                        st.success("Semana apagada.")
+                        st.rerun()
+            else:
+                st.info("Ainda não tens semanas criadas.")
         
         with tab2:
             conn = get_db_connection()
@@ -569,7 +714,6 @@ def main_app():
                 base_date = datetime.strptime(micro_data['start_date'], '%Y-%m-%d')
                 st.info(f"🎯 Objetivo: {micro_data['goal']}")
                 
-                # Loop de 7 dias
                 for i in range(7):
                     curr = base_date + timedelta(days=i)
                     d_str = curr.strftime("%Y-%m-%d")
@@ -579,32 +723,30 @@ def main_app():
                     sess = pd.read_sql_query("SELECT * FROM sessions WHERE user_id=? AND start_date=?", conn_d, params=(user, d_str))
                     conn_d.close()
                     
-                    # Preparar Ícone e Texto
                     icon = "⚪"
                     header_extra = ""
                     
                     if not sess.empty:
                         t = sess.iloc[0]['type']
                         stt = sess.iloc[0].get('status', 'Realizado')
+                        tm = sess.iloc[0].get('match_time', '')
+                        tm_str = f"({tm})" if tm else ""
                         
                         if stt == 'Cancelado':
                             icon = "❌"
                             header_extra = "(Cancelado)"
                         elif t=="Treino": 
                             icon = "⚽"
+                            header_extra = f"{tm_str}"
                         elif t=="Jogo": 
                             icon = "🔴"
-                            opp = sess.iloc[0].get('opponent', '')
-                            m_time = sess.iloc[0].get('match_time', '')
-                            loc = sess.iloc[0].get('location', '')
-                            if opp: 
-                                header_extra = f"- Jogo vs {opp} ({m_time} - {loc})"
+                            header_extra = f"- Jogo vs {sess.iloc[0].get('opponent','')} {tm_str}"
                         elif t=="Descanso": 
                             icon = "🟢"
                     
                     with st.expander(f"{icon} {d_name} ({d_str}) {header_extra}"):
                         
-                        # --- SECÇÃO 1: PDF E PRESENÇAS (Só se for Treino e não cancelado) ---
+                        # --- SECÇÃO 1: PDF E PRESENÇAS ---
                         if not sess.empty and sess.iloc[0]['type'] == 'Treino' and sess.iloc[0].get('status') != 'Cancelado':
                             col_pdf, _ = st.columns([1,3])
                             with col_pdf:
@@ -620,7 +762,6 @@ def main_app():
                                     d_df = pd.read_sql_query(q, conn_pdf, params=p)
                                     a_df = pd.read_sql_query("SELECT name, status FROM goalkeepers WHERE user_id=?", conn_pdf, params=(user,))
                                     conn_pdf.close()
-                                    
                                     try:
                                         pdf_bytes = create_training_pdf(user, s_data, a_df, drills_config, d_df)
                                         st.download_button("📥 Baixar PDF do Treino", pdf_bytes, f"Treino_{d_str}.pdf", "application/pdf")
@@ -631,8 +772,6 @@ def main_app():
                             st.markdown("#### 🙋‍♂️ Registo de Presenças")
                             conn_p = get_db_connection()
                             all_gks = pd.read_sql_query("SELECT id, name FROM goalkeepers WHERE user_id=?", conn_p, params=(user,))
-                            
-                            # Buscar presenças já marcadas
                             sess_id = int(sess.iloc[0]['id'])
                             pres_exist = pd.read_sql_query("SELECT gk_id FROM attendance WHERE session_id=?", conn_p, params=(sess_id,))
                             conn_p.close()
@@ -646,9 +785,7 @@ def main_app():
                                     ids_to_save = all_gks[all_gks['name'].isin(selected_gks)]['id'].tolist()
                                     conn_s = get_db_connection()
                                     c = conn_s.cursor()
-                                    # Limpar antigos para esta sessão
                                     c.execute("DELETE FROM attendance WHERE session_id=?", (sess_id,))
-                                    # Inserir novos
                                     for gk_id in ids_to_save:
                                         c.execute("INSERT INTO attendance (session_id, gk_id, status) VALUES (?,?,?)", (sess_id, gk_id, 'Presente'))
                                     conn_s.commit(); conn_s.close()
@@ -658,7 +795,6 @@ def main_app():
 
                         # --- SECÇÃO 2: FORMULÁRIO DE PLANEAMENTO ---
                         with st.form(f"f_{d_str}"):
-                            # Configuração Base
                             c_conf1, c_conf2 = st.columns(2)
                             prev_t = sess.iloc[0]['type'] if not sess.empty else "Treino"
                             prev_s = sess.iloc[0].get('status', 'Realizado') if not sess.empty else "Realizado"
@@ -667,11 +803,9 @@ def main_app():
                             type_d = c_conf1.selectbox("Tipo de Sessão", ["Treino", "Jogo", "Descanso"], index=["Treino", "Jogo", "Descanso"].index(prev_t), key=f"tp_{d_str}")
                             status_d = c_conf2.selectbox("Estado", ["Realizado", "Cancelado"], index=["Realizado", "Cancelado"].index(prev_s), key=f"st_{d_str}")
                             
-                            # --- Lógica de Jogo vs Treino ---
                             opp_val = ""
                             time_val = time(15,0)
                             loc_val = "Casa"
-                            
                             if not sess.empty:
                                 opp_val = sess.iloc[0].get('opponent', '')
                                 t_str = sess.iloc[0].get('match_time', '15:00:00')
@@ -691,40 +825,34 @@ def main_app():
                             elif type_d == "Treino":
                                 def_t = sess.iloc[0]['title'] if not sess.empty else ""
                                 sess_t = st.text_input("Foco / Tema do Treino", value=def_t, key=f"tit_{d_str}")
+                                # NOVO V52: HORA DO TREINO
+                                save_time = st.time_input("Hora do Treino", value=time_val, key=f"tmt_{d_str}")
                             else:
                                 sess_t = "Descanso"
 
-                            # --- SELEÇÃO DE EXERCÍCIOS ---
                             new_config = []
                             drills_json = "[]"
                             
                             if type_d == "Treino":
                                 current_config = parse_drills(sess.iloc[0]['drills_list']) if not sess.empty else []
                                 current_titles = [d['title'] for d in current_config]
-                                
                                 conn_ex = get_db_connection()
                                 ddb = pd.read_sql_query("SELECT title, moment, training_type FROM exercises WHERE user_id=?", conn_ex, params=(user,))
                                 conn_ex.close()
-                                
-                                # Filtro de Tipos
                                 all_types = sorted(ddb['training_type'].unique().tolist()) if not ddb.empty else ["Técnico", "Tático"]
                                 type_filter = st.multiselect("Filtrar Tipo de Exercício", all_types, default=all_types, key=f"ft_{d_str}")
-                                
                                 moms = ["Defesa de Baliza", "Defesa do Espaço", "Cruzamento", "Duelos", "Distribuição", "Passe Atrasado"]
                                 selected_in_tabs = []
                                 drill_tabs = st.tabs(moms)
-                                
                                 for k, mom in enumerate(moms):
                                     with drill_tabs[k]:
                                         if type_filter:
                                             options = ddb[(ddb['moment'] == mom) & (ddb['training_type'].isin(type_filter))]['title'].tolist()
                                         else:
                                             options = ddb[ddb['moment'] == mom]['title'].tolist()
-                                            
                                         defaults = [t for t in current_titles if t in options]
                                         sel = st.multiselect(f"Exercícios ({mom})", options, default=defaults, key=f"ms_{d_str}_{mom}")
                                         selected_in_tabs.extend(sel)
-                                
                                 if selected_in_tabs:
                                     st.markdown("###### ⚙️ Configurar Carga:")
                                     for i, title in enumerate(selected_in_tabs):
@@ -741,7 +869,6 @@ def main_app():
                                 conn_s = get_db_connection()
                                 c = conn_s.cursor()
                                 chk = c.execute("SELECT id FROM sessions WHERE user_id=? AND start_date=?", (user, d_str)).fetchone()
-                                
                                 s_time_str = save_time.strftime("%H:%M:%S") if save_time else None
                                 
                                 if chk: 
@@ -753,9 +880,8 @@ def main_app():
                                                  VALUES (?,?,?,?,?,?,?,?,?)""", 
                                               (user, type_d, sess_t, d_str, drills_json, status_d, save_opp, s_time_str, save_loc))
                                 conn_s.commit(); conn_s.close()
-                                backup_to_drive() # Backup automático após guardar
-                                st.success("Guardado com sucesso!")
-                                st.rerun()
+                                backup_to_drive()
+                                st.success("Guardado com sucesso!"); st.rerun()
             else: st.warning("Cria uma semana primeiro.")
 
     # --- 2. ESTATÍSTICAS & PRESENÇAS ---
@@ -769,23 +895,19 @@ def main_app():
             conn = get_db_connection()
             total_sessions = conn.execute("SELECT count(*) FROM sessions WHERE user_id=? AND type='Treino' AND (status IS NULL OR status != 'Cancelado') AND start_date >= ? AND start_date <= ?", (user, start_filter, end_filter)).fetchone()[0]
             gks = pd.read_sql_query("SELECT id, name FROM goalkeepers WHERE user_id=?", conn, params=(user,))
-            
             att_data = []
             if total_sessions > 0:
                 for _, gk in gks.iterrows():
                     n_p = conn.execute("""SELECT count(*) FROM attendance a JOIN sessions s ON a.session_id = s.id WHERE s.user_id=? AND a.gk_id=? AND s.type='Treino' AND (s.status IS NULL OR s.status != 'Cancelado') AND s.start_date >= ? AND s.start_date <= ?""", (user, gk['id'], start_filter, end_filter)).fetchone()[0]
                     att_data.append({"Nome": gk['name'], "Presenças": n_p, "Total Treinos": total_sessions, "% Assiduidade": f"{(n_p/total_sessions)*100:.1f}%"})
-                
                 df_att = pd.DataFrame(att_data)
                 st.subheader(f"Resumo ({start_filter} a {end_filter})")
                 st.metric("Total de Treinos Realizados", total_sessions)
                 st.dataframe(df_att, use_container_width=True)
-                
                 if not df_att.empty:
                     df_att['Val'] = df_att['% Assiduidade'].str.replace('%','').astype(float)
                     st.bar_chart(df_att.set_index("Nome")['Val'])
-            else:
-                st.info("Não existem treinos registados neste intervalo.")
+            else: st.info("Não existem treinos registados neste intervalo.")
             conn.close()
 
     # --- 3. ESCOUTING E ADVERSÁRIOS ---
@@ -819,8 +941,32 @@ def main_app():
                 opp_data = opps[opps['name'] == selected_opp_name].iloc[0]
                 opp_id = int(opp_data['id'])
                 
-                st.subheader(f"Análise: {selected_opp_name}")
-                
+                c_tit, c_manage = st.columns([3, 1])
+                with c_tit:
+                    st.subheader(f"Análise: {selected_opp_name}")
+                with c_manage:
+                    with st.popover("⚙️ Gerir Equipa"):
+                        st.markdown("**Editar Equipa**")
+                        new_team_name = st.text_input("Novo Nome", value=selected_opp_name, key=f"ren_team_{opp_id}")
+                        if st.button("Renomear Equipa", key=f"btn_ren_team_{opp_id}"):
+                            conn = get_db_connection()
+                            conn.cursor().execute("UPDATE opponents SET name=? WHERE id=?", (new_team_name, opp_id))
+                            conn.commit(); conn.close()
+                            backup_to_drive()
+                            st.success("Renomeado!")
+                            st.rerun()
+                        
+                        st.divider()
+                        st.markdown("**Zona de Perigo**")
+                        if st.button("🗑️ Apagar Equipa", type="primary", key=f"btn_del_team_{opp_id}"):
+                            conn = get_db_connection()
+                            conn.cursor().execute("DELETE FROM opponent_files WHERE opponent_id=?", (opp_id,))
+                            conn.cursor().execute("DELETE FROM opponents WHERE id=?", (opp_id,))
+                            conn.commit(); conn.close()
+                            backup_to_drive()
+                            st.success("Equipa Apagada!")
+                            st.rerun()
+
                 with st.form("opp_notes"):
                     notes = st.text_area("Notas Táticas e Observações", value=opp_data['notes'] if opp_data['notes'] else "", height=200)
                     if st.form_submit_button("Guardar Notas"):
@@ -831,70 +977,105 @@ def main_app():
                         st.success("Guardado")
                 
                 st.markdown("---")
-                st.write("### 📎 Anexos e Links")
                 
-                c_upl, c_lnk = st.tabs(["Carregar Ficheiro", "Adicionar Link"])
-                with c_upl:
-                    upl_file = st.file_uploader("Ficheiro (PDF, PPT, Imagem)", key="opp_upl")
-                    if st.button("Guardar Ficheiro"):
-                        if upl_file:
-                            blob = upl_file.read()
-                            conn = get_db_connection()
-                            conn.cursor().execute("INSERT INTO opponent_files (opponent_id, name, type, content) VALUES (?,?,?,?)", (opp_id, upl_file.name, "file", blob))
-                            conn.commit(); conn.close()
-                            backup_to_drive()
-                            st.success("Ficheiro anexado!")
-                            st.rerun()
-                with c_lnk:
-                    lnk_url = st.text_input("URL (Youtube, Hudl, Drive)")
-                    lnk_name = st.text_input("Nome do Link (ex: Análise Bola Parada)")
-                    if st.button("Guardar Link"):
-                        if lnk_url and lnk_name:
-                            conn = get_db_connection()
-                            conn.cursor().execute("INSERT INTO opponent_files (opponent_id, name, type, link) VALUES (?,?,?,?)", (opp_id, lnk_name, "link", lnk_url))
-                            conn.commit(); conn.close()
-                            backup_to_drive()
-                            st.success("Link guardado!")
-                            st.rerun()
+                tab_add, tab_docs, tab_links = st.tabs(["➕ Adicionar", "📄 Documentos", "🎥 Links & Vídeos"])
                 
-                # Listagem de Ficheiros
+                with tab_add:
+                    c_upl, c_lnk = st.columns(2)
+                    with c_upl:
+                        st.write("###### Upload Ficheiro")
+                        upl_file = st.file_uploader("PDF, Imagem, PPT", key="opp_upl")
+                        if st.button("Guardar Ficheiro"):
+                            if upl_file:
+                                blob = upl_file.read()
+                                conn = get_db_connection()
+                                conn.cursor().execute("INSERT INTO opponent_files (opponent_id, name, type, content) VALUES (?,?,?,?)", (opp_id, upl_file.name, "file", blob))
+                                conn.commit(); conn.close()
+                                backup_to_drive()
+                                st.success("Ficheiro anexado!")
+                                st.rerun()
+                    with c_lnk:
+                        st.write("###### Adicionar Link")
+                        lnk_url = st.text_input("URL (Youtube, Drive, etc)")
+                        lnk_name = st.text_input("Nome do Link (ex: Resumo)")
+                        if st.button("Guardar Link"):
+                            if lnk_url and lnk_name:
+                                conn = get_db_connection()
+                                conn.cursor().execute("INSERT INTO opponent_files (opponent_id, name, type, link) VALUES (?,?,?,?)", (opp_id, lnk_name, "link", lnk_url))
+                                conn.commit(); conn.close()
+                                backup_to_drive()
+                                st.success("Link guardado!")
+                                st.rerun()
+
                 conn = get_db_connection()
                 files = pd.read_sql_query("SELECT * FROM opponent_files WHERE opponent_id=?", conn, params=(opp_id,))
                 conn.close()
                 
-                if not files.empty:
-                    for _, f in files.iterrows():
-                        c1, c2, c3 = st.columns([4, 1, 1])
-                        with c1:
-                            if f['type'] == 'link': 
-                                st.markdown(f"🔗 **[{f['name']}]({f['link']})**")
-                            else: 
-                                st.write(f"📄 {f['name']}")
-                        with c2:
-                            if f['type'] == 'file':
-                                st.download_button("📥 Download", f['content'], file_name=f['name'], key=f"dl_{f['id']}")
-                        with c3:
-                            if st.button("🗑️", key=f"del_oppf_{f['id']}"):
-                                conn = get_db_connection()
-                                conn.cursor().execute("DELETE FROM opponent_files WHERE id=?", (f['id'],))
-                                conn.commit(); conn.close()
-                                backup_to_drive()
-                                st.rerun()
-                else:
-                    st.caption("Sem anexos.")
+                docs = files[files['type'] == 'file']
+                links = files[files['type'] == 'link']
+
+                with tab_docs:
+                    if not docs.empty:
+                        for _, f in docs.iterrows():
+                            with st.expander(f"📄 {f['name']}"):
+                                c1, c2 = st.columns([3, 1])
+                                with c1:
+                                    st.download_button("📥 Download", f['content'], file_name=f['name'], key=f"dl_{f['id']}")
+                                with c2:
+                                    with st.popover("⚙️ Gerir"):
+                                        new_name = st.text_input("Novo nome", f['name'], key=f"ren_{f['id']}")
+                                        if st.button("Renomear", key=f"btn_ren_{f['id']}"):
+                                            conn = get_db_connection()
+                                            conn.cursor().execute("UPDATE opponent_files SET name=? WHERE id=?", (new_name, f['id']))
+                                            conn.commit(); conn.close(); backup_to_drive(); st.rerun()
+                                        st.divider()
+                                        if st.button("🗑️ Apagar Documento", key=f"del_doc_{f['id']}"):
+                                            conn = get_db_connection()
+                                            conn.cursor().execute("DELETE FROM opponent_files WHERE id=?", (f['id'],))
+                                            conn.commit(); conn.close(); backup_to_drive(); st.rerun()
+                    else:
+                        st.info("Sem documentos anexados.")
+
+                with tab_links:
+                    if not links.empty:
+                        for _, f in links.iterrows():
+                            is_video = False
+                            url = f['link'].lower()
+                            if "youtube.com" in url or "youtu.be" in url:
+                                is_video = True
+                            icon = "🎥" if is_video else "🔗"
+                            
+                            with st.expander(f"{icon} {f['name']}"):
+                                if is_video:
+                                    st.video(f['link'])
+                                else:
+                                    st.markdown(f"👉 **[Abrir Link]({f['link']})**")
+                                
+                                with st.popover("⚙️ Gerir"):
+                                    new_name = st.text_input("Novo nome", f['name'], key=f"ren_lnk_{f['id']}")
+                                    if st.button("Renomear", key=f"btn_ren_lnk_{f['id']}"):
+                                        conn = get_db_connection()
+                                        conn.cursor().execute("UPDATE opponent_files SET name=? WHERE id=?", (new_name, f['id']))
+                                        conn.commit(); conn.close(); backup_to_drive(); st.rerun()
+                                    st.divider()
+                                    if st.button("🗑️ Apagar Link", key=f"del_lnk_{f['id']}"):
+                                        conn = get_db_connection()
+                                        conn.cursor().execute("DELETE FROM opponent_files WHERE id=?", (f['id'],))
+                                        conn.commit(); conn.close(); backup_to_drive(); st.rerun()
+                    else:
+                        st.info("Sem links ou vídeos.")
+
             else:
                 st.info("Seleciona ou cria um adversário na lista à esquerda.")
 
     # --- 4. BIBLIOTECA DE DOCUMENTOS ---
     elif menu == "Biblioteca Documentos":
         st.header("📚 Minha Biblioteca Digital")
-        
         conn = get_db_connection()
         folders = pd.read_sql_query("SELECT * FROM library_folders WHERE user_id=?", conn, params=(user,))
         conn.close()
         
         c_nav, c_content = st.columns([1, 3])
-        
         with c_nav:
             st.subheader("Pastas")
             with st.form("new_folder"):
@@ -902,20 +1083,14 @@ def main_app():
                 if st.form_submit_button("Criar"):
                     conn = get_db_connection()
                     conn.cursor().execute("INSERT INTO library_folders (user_id, name) VALUES (?,?)", (user, nf))
-                    conn.commit(); conn.close()
-                    backup_to_drive()
-                    st.rerun()
-            
-            if not folders.empty:
-                sel_folder = st.radio("Navegar:", folders['name'].tolist())
-            else:
-                sel_folder = None
+                    conn.commit(); conn.close(); backup_to_drive(); st.rerun()
+            if not folders.empty: sel_folder = st.radio("Navegar:", folders['name'].tolist())
+            else: sel_folder = None
             
         with c_content:
             if sel_folder:
                 folder_id = int(folders[folders['name'] == sel_folder].iloc[0]['id'])
                 st.subheader(f"📂 Conteúdo: {sel_folder}")
-                
                 with st.expander("➕ Adicionar Documento ou Link"):
                     tab_f, tab_l = st.tabs(["Ficheiro", "Link"])
                     with tab_f:
@@ -926,22 +1101,14 @@ def main_app():
                                 blob = lf.read()
                                 conn = get_db_connection()
                                 conn.cursor().execute("INSERT INTO library_files (folder_id, name, type, content, description) VALUES (?,?,?,?,?)", (folder_id, lf.name, "file", blob, desc_f))
-                                conn.commit(); conn.close()
-                                backup_to_drive()
-                                st.success("Adicionado!")
-                                st.rerun()
+                                conn.commit(); conn.close(); backup_to_drive(); st.success("Adicionado!"); st.rerun()
                     with tab_l:
-                        ll = st.text_input("URL")
-                        ln = st.text_input("Nome")
-                        desc_l = st.text_input("Descrição", key="dl")
+                        ll = st.text_input("URL"); ln = st.text_input("Nome"); desc_l = st.text_input("Descrição", key="dl")
                         if st.button("Adicionar Link"):
                             if ll and ln:
                                 conn = get_db_connection()
                                 conn.cursor().execute("INSERT INTO library_files (folder_id, name, type, link, description) VALUES (?,?,?,?,?)", (folder_id, ln, "link", ll, desc_l))
-                                conn.commit(); conn.close()
-                                backup_to_drive()
-                                st.success("Adicionado!")
-                                st.rerun()
+                                conn.commit(); conn.close(); backup_to_drive(); st.success("Adicionado!"); st.rerun()
                 
                 conn = get_db_connection()
                 lib_files = pd.read_sql_query("SELECT * FROM library_files WHERE folder_id=?", conn, params=(folder_id,))
@@ -952,27 +1119,17 @@ def main_app():
                         with st.container(border=True):
                             lc1, lc2 = st.columns([5, 1])
                             with lc1:
-                                if lf['type'] == 'link': 
-                                    st.markdown(f"🔗 **[{lf['name']}]({lf['link']})**")
-                                else: 
-                                    st.markdown(f"📄 **{lf['name']}**")
-                                
-                                if lf['description']:
-                                    st.caption(lf['description'])
+                                if lf['type'] == 'link': st.markdown(f"🔗 **[{lf['name']}]({lf['link']})**")
+                                else: st.markdown(f"📄 **{lf['name']}**")
+                                if lf['description']: st.caption(lf['description'])
                             with lc2:
-                                if lf['type'] == 'file':
-                                    st.download_button("📥", lf['content'], file_name=lf['name'], key=f"lib_dl_{lf['id']}")
-                                
+                                if lf['type'] == 'file': st.download_button("📥", lf['content'], file_name=lf['name'], key=f"lib_dl_{lf['id']}")
                                 if st.button("🗑️", key=f"lib_del_{lf['id']}"):
                                     conn = get_db_connection()
                                     conn.cursor().execute("DELETE FROM library_files WHERE id=?", (lf['id'],))
-                                    conn.commit(); conn.close()
-                                    backup_to_drive()
-                                    st.rerun()
-                else:
-                    st.info("Esta pasta está vazia.")
-            else:
-                st.info("Cria e seleciona uma pasta para começar a organizar os teus documentos.")
+                                    conn.commit(); conn.close(); backup_to_drive(); st.rerun()
+                else: st.info("Esta pasta está vazia.")
+            else: st.info("Cria e seleciona uma pasta para começar a organizar os teus documentos.")
 
     # --- 5. RELATÓRIOS ---
     elif menu == "Relatórios & Avaliações":
@@ -985,20 +1142,15 @@ def main_app():
             sess = pd.read_sql_query("SELECT * FROM sessions WHERE user_id=? AND start_date=?", conn, params=(user, d_str))
             if not sess.empty:
                 s_data = sess.iloc[0]
-                if s_data.get('status') == 'Cancelado':
-                    st.error("⚠️ Este Treino foi Cancelado")
-                
+                if s_data.get('status') == 'Cancelado': st.error("⚠️ Este Treino foi Cancelado")
                 st.info(f"Treino: {s_data['title']}")
                 with st.form("daily_rep"):
                     r_txt = st.text_area("Relatório do Treinador", value=s_data['report'] if s_data['report'] else "")
                     if st.form_submit_button("Guardar Relatório"):
                         c = conn.cursor()
                         c.execute("UPDATE sessions SET report=? WHERE id=?", (r_txt, int(s_data['id'])))
-                        conn.commit(); conn.close()
-                        backup_to_drive()
-                        st.success("Guardado")
-            else:
-                st.warning("Não há sessão para este dia.")
+                        conn.commit(); conn.close(); backup_to_drive(); st.success("Guardado")
+            else: st.warning("Não há sessão para este dia.")
             conn.close()
 
     # --- 6. EVOLUÇÃO ---
@@ -1017,10 +1169,8 @@ def main_app():
                 st.line_chart(hist.set_index("date")['rating'])
                 st.dataframe(hist, use_container_width=True)
                 st.metric("Média de Nota", f"{hist['rating'].mean():.1f}")
-            else:
-                st.info("Sem dados de avaliação ainda.")
-        else:
-            st.warning("Crie atletas primeiro.")
+            else: st.info("Sem dados de avaliação ainda.")
+        else: st.warning("Crie atletas primeiro.")
 
     # --- 7. CENTRO DE JOGO (COMPLETO) ---
     elif menu == "Centro de Jogo":
@@ -1141,13 +1291,8 @@ def main_app():
                     conn = get_db_connection()
                     gid = int(gks[gks['name']==gk].iloc[0]['id']) if not gks.empty else 0
                     c = conn.cursor()
-                    
-                    # Apagar anterior se existir
                     c.execute("DELETE FROM matches WHERE user_id=? AND date=?", (user, sel_date))
-                    
-                    # 72 Variáveis - Lista Completa
-                    vals = (
-                        user, sel_date, sel_game.split(" | ")[1], gid, gls, svs, res, rep, rt, match_type,
+                    vals = (user, sel_date, sel_game.split(" | ")[1], gid, gls, svs, res, rep, rt, match_type,
                         bloq_sq_r, bloq_sq_m, bloq_sq_a, bloq_cq_r, bloq_cq_m, bloq_cq_a,
                         rec_sq_m, rec_sq_a, rec_cq_r, rec_cq_m, rec_cq_a, rec_cq_v,
                         desv_sq_p, desv_sq_mf, desv_sq_ml, desv_sq_a1, desv_sq_a2, 
@@ -1157,15 +1302,9 @@ def main_app():
                         du_par, du_aba, du_est, du_fro,
                         pa_c1, pa_c2, pa_l1, pa_l2, di_cm, di_lm, di_pm, di_vo, di_cp, di_lp,
                         cr_rec, cr_s1, cr_s2, cr_int,
-                        eto_pb_curto, eto_pb_medio, eto_pb_longo
-                    )
-                    
-                    # String de placeholders (73 com match_type)
+                        eto_pb_curto, eto_pb_medio, eto_pb_longo)
                     placeholders = ",".join(["?"] * len(vals))
-                    
-                    # Inserção
-                    c.execute(f'''INSERT INTO matches (
-                        id, user_id, date, opponent, gk_id, goals_conceded, saves, result, report, rating, match_type,
+                    c.execute(f'''INSERT INTO matches (id, user_id, date, opponent, gk_id, goals_conceded, saves, result, report, rating, match_type,
                         db_bloq_sq_rast, db_bloq_sq_med, db_bloq_sq_alt, db_bloq_cq_rast, db_bloq_cq_med, db_bloq_cq_alt,
                         db_rec_sq_med, db_rec_sq_alt, db_rec_cq_rast, db_rec_cq_med, db_rec_cq_alt, db_rec_cq_varr,
                         db_desv_sq_pe, db_desv_sq_mfr, db_desv_sq_mlat, db_desv_sq_a1, db_desv_sq_a2, db_desv_cq_varr, db_desv_cq_r1, db_desv_cq_r2, db_desv_cq_a1, db_desv_cq_a2,
@@ -1174,13 +1313,8 @@ def main_app():
                         duelo_parede, duelo_abafo, duelo_estrela, duelo_frontal,
                         pa_curto_1, pa_curto_2, pa_longo_1, pa_longo_2, dist_curta_mao, dist_longa_mao, dist_picada_mao, dist_volley, dist_curta_pe, dist_longa_pe,
                         cruz_rec_alta, cruz_soco_1, cruz_soco_2, cruz_int_rast,
-                        eto_pb_curto, eto_pb_medio, eto_pb_longo
-                    ) VALUES (NULL, {placeholders})''', vals)
-                    
-                    conn.commit(); conn.close()
-                    backup_to_drive()
-                    st.success("Ficha de Jogo Completa Guardada!")
-                    st.rerun()
+                        eto_pb_curto, eto_pb_medio, eto_pb_longo) VALUES (NULL, {placeholders})''', vals)
+                    conn.commit(); conn.close(); backup_to_drive(); st.success("Ficha de Jogo Completa Guardada!"); st.rerun()
             
             st.markdown("---")
             st.subheader("Histórico de Jogos")
@@ -1190,11 +1324,8 @@ def main_app():
             except:
                 hist = pd.read_sql_query("SELECT date, opponent, result, rating FROM matches WHERE user_id=? ORDER BY date DESC", conn, params=(user,))
             conn.close()
-            if not hist.empty:
-                st.dataframe(hist, use_container_width=True)
-            else:
-                st.info("Ainda sem jogos.")
-
+            if not hist.empty: st.dataframe(hist, use_container_width=True)
+            else: st.info("Ainda sem jogos.")
         else: st.info("Marca jogos primeiro na Gestão Semanal.")
 
     # --- 8. CALENDÁRIO ---
@@ -1222,7 +1353,7 @@ def main_app():
             evs.append({"title": title_display, "start": r['start_date'], "end": r['start_date'], "backgroundColor": c})
         calendar(events=evs, options={"initialView": "dayGridMonth"})
 
-    # --- 9. ATLETAS ---
+    # --- 9. ATLETAS (V52 - DEPARTAMENTO MÉDICO) ---
     elif menu == "Meus Atletas":
         st.header("📋 Plantel")
         mode = st.radio("Opções", ["Novo", "Editar", "Eliminar"], horizontal=True)
@@ -1230,70 +1361,114 @@ def main_app():
         all_gks = pd.read_sql_query("SELECT * FROM goalkeepers WHERE user_id=?", conn, params=(user,))
         conn.close()
         
-        d_n, d_a, d_s = "", 18, "Apto"
-        d_h, d_w, d_al, d_ar, d_gl = 0.0, 0.0, 0.0, 0.0, ""
-        d_jf2, d_jfl, d_jfr, d_jll, d_jlr = 0.0, 0.0, 0.0, 0.0, 0.0
-        d_tr, d_ta, d_tv = "", "", ""
-        e_id = None
+        tab_perf, tab_med = st.tabs(["👤 Perfil & Dados", "🏥 Departamento Médico"])
         
-        if mode in ["Editar", "Eliminar"] and not all_gks.empty:
-            s_gk = st.selectbox("Atleta", all_gks['name'].tolist())
-            gk_d = all_gks[all_gks['name']==s_gk].iloc[0]
-            e_id = int(gk_d['id'])
-            d_n, d_a, d_s = gk_d['name'], int(gk_d['age']), gk_d['status']
-            d_h, d_w, d_al, d_ar, d_gl = gk_d['height'], gk_d['wingspan'], gk_d['arm_len_left'], gk_d['arm_len_right'], gk_d['glove_size']
-            d_jf2, d_jfl, d_jfr = gk_d['jump_front_2'], gk_d['jump_front_l'], gk_d['jump_front_r']
-            d_jll, d_jlr = gk_d['jump_lat_l'], gk_d['jump_lat_r']
-            d_tr, d_ta, d_tv = gk_d['test_res'], gk_d['test_agil'], gk_d['test_vel']
-            
-        if mode=="Eliminar" and e_id:
-            if st.button("🗑️ Eliminar"):
-                conn = get_db_connection()
-                conn.cursor().execute("DELETE FROM goalkeepers WHERE id=?", (e_id,))
-                conn.commit(); conn.close()
-                backup_to_drive()
-                st.success("Apagado"); st.rerun()
-        
-        elif mode!="Eliminar":
-            with st.form("gk_form"):
-                st.subheader("1. Perfil")
-                c1,c2,c3 = st.columns(3)
-                nm = st.text_input("Nome", value=d_n)
-                ag = st.number_input("Idade", value=d_a)
-                stt = st.selectbox("Estado", ["Apto", "Lesionado"], index=0 if d_s=="Apto" else 1)
-                st.subheader("2. Biometria")
-                b1,b2,b3,b4,b5=st.columns(5)
-                ht=b1.number_input("Altura", 0.0, 250.0, value=d_h)
-                ws=b2.number_input("Envergadura", 0.0, 250.0, value=d_w)
-                al=b3.number_input("Braço E", 0.0, 150.0, value=d_al)
-                ar=b4.number_input("Braço D", 0.0, 150.0, value=d_ar)
-                gl=b5.text_input("Luva", value=d_gl)
-                st.subheader("3. Saltos")
-                j1,j2,j3=st.columns(3)
-                jf2=j1.number_input("Frontal 2", 0.0, value=d_jf2)
-                jfl=j2.number_input("Frontal E", 0.0, value=d_jfl)
-                jfr=j3.number_input("Frontal D", 0.0, value=d_jfr)
-                j4,j5=st.columns(2)
-                jll=j4.number_input("Lateral E", 0.0, value=d_jll)
-                jlr=j5.number_input("Lateral D", 0.0, value=d_jlr)
-                st.subheader("4. Testes")
-                t1,t2,t3=st.columns(3)
-                tr=t1.text_input("Resistência", value=d_tr)
-                ta=t2.text_input("Agilidade", value=d_ta)
-                tv=t3.text_input("Velocidade", value=d_tv)
-                if st.form_submit_button("Guardar"):
+        with tab_perf:
+            d_n, d_a, d_s = "", 18, "Apto"
+            d_h, d_w, d_al, d_ar, d_gl = 0.0, 0.0, 0.0, 0.0, ""
+            d_jf2, d_jfl, d_jfr, d_jll, d_jlr = 0.0, 0.0, 0.0, 0.0, 0.0
+            d_tr, d_ta, d_tv = "", "", ""
+            e_id = None
+            if mode in ["Editar", "Eliminar"] and not all_gks.empty:
+                s_gk = st.selectbox("Atleta", all_gks['name'].tolist())
+                gk_d = all_gks[all_gks['name']==s_gk].iloc[0]
+                e_id = int(gk_d['id'])
+                d_n, d_a, d_s = gk_d['name'], int(gk_d['age']), gk_d['status']
+                d_h, d_w, d_al, d_ar, d_gl = gk_d['height'], gk_d['wingspan'], gk_d['arm_len_left'], gk_d['arm_len_right'], gk_d['glove_size']
+                d_jf2, d_jfl, d_jfr = gk_d['jump_front_2'], gk_d['jump_front_l'], gk_d['jump_front_r']
+                d_jll, d_jlr = gk_d['jump_lat_l'], gk_d['jump_lat_r']
+                d_tr, d_ta, d_tv = gk_d['test_res'], gk_d['test_agil'], gk_d['test_vel']
+                
+            if mode=="Eliminar" and e_id:
+                if st.button("🗑️ Eliminar"):
                     conn = get_db_connection()
-                    c = conn.cursor()
-                    if mode=="Novo":
-                        c.execute('''INSERT INTO goalkeepers (user_id, name, age, status, height, wingspan, arm_len_left, arm_len_right, glove_size, jump_front_2, jump_front_l, jump_front_r, jump_lat_l, jump_lat_r, test_res, test_agil, test_vel) VALUES (?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?)''', 
-                                  (user, nm, ag, stt, ht, ws, al, ar, gl, jf2, jfl, jfr, jll, jlr, tr, ta, tv))
-                    elif e_id:
-                        c.execute('''UPDATE goalkeepers SET name=?, age=?, status=?, height=?, wingspan=?, arm_len_left=?, arm_len_right=?, glove_size=?, jump_front_2=?, jump_front_l=?, jump_front_r=?, jump_lat_l=?, jump_lat_r=?, test_res=?, test_agil=?, test_vel=? WHERE id=?''', 
-                                  (nm, ag, stt, ht, ws, al, ar, gl, jf2, jfl, jfr, jll, jlr, tr, ta, tv, e_id))
+                    conn.cursor().execute("DELETE FROM goalkeepers WHERE id=?", (e_id,))
                     conn.commit(); conn.close()
                     backup_to_drive()
-                    st.success("Guardado"); st.rerun()
-        if not all_gks.empty: st.dataframe(all_gks.drop(columns=['user_id', 'notes']), use_container_width=True)
+                    st.success("Apagado"); st.rerun()
+            
+            elif mode!="Eliminar":
+                with st.form("gk_form"):
+                    st.subheader("1. Perfil")
+                    c1,c2,c3 = st.columns(3)
+                    nm = st.text_input("Nome", value=d_n)
+                    ag = st.number_input("Idade", value=d_a)
+                    stt = st.selectbox("Estado", ["Apto", "Lesionado"], index=0 if d_s=="Apto" else 1)
+                    st.subheader("2. Biometria")
+                    b1,b2,b3,b4,b5=st.columns(5)
+                    ht=b1.number_input("Altura", 0.0, 250.0, value=d_h)
+                    ws=b2.number_input("Envergadura", 0.0, 250.0, value=d_w)
+                    al=b3.number_input("Braço E", 0.0, 150.0, value=d_al)
+                    ar=b4.number_input("Braço D", 0.0, 150.0, value=d_ar)
+                    gl=b5.text_input("Luva", value=d_gl)
+                    st.subheader("3. Saltos")
+                    j1,j2,j3=st.columns(3)
+                    jf2=j1.number_input("Frontal 2", 0.0, value=d_jf2)
+                    jfl=j2.number_input("Frontal E", 0.0, value=d_jfl)
+                    jfr=j3.number_input("Frontal D", 0.0, value=d_jfr)
+                    j4,j5=st.columns(2)
+                    jll=j4.number_input("Lateral E", 0.0, value=d_jll)
+                    jlr=j5.number_input("Lateral D", 0.0, value=d_jlr)
+                    st.subheader("4. Testes")
+                    t1,t2,t3=st.columns(3)
+                    tr=t1.text_input("Resistência", value=d_tr)
+                    ta=t2.text_input("Agilidade", value=d_ta)
+                    tv=t3.text_input("Velocidade", value=d_tv)
+                    if st.form_submit_button("Guardar"):
+                        conn = get_db_connection()
+                        c = conn.cursor()
+                        if mode=="Novo":
+                            c.execute('''INSERT INTO goalkeepers (user_id, name, age, status, height, wingspan, arm_len_left, arm_len_right, glove_size, jump_front_2, jump_front_l, jump_front_r, jump_lat_l, jump_lat_r, test_res, test_agil, test_vel) VALUES (?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?)''', 
+                                      (user, nm, ag, stt, ht, ws, al, ar, gl, jf2, jfl, jfr, jll, jlr, tr, ta, tv))
+                        elif e_id:
+                            c.execute('''UPDATE goalkeepers SET name=?, age=?, status=?, height=?, wingspan=?, arm_len_left=?, arm_len_right=?, glove_size=?, jump_front_2=?, jump_front_l=?, jump_front_r=?, jump_lat_l=?, jump_lat_r=?, test_res=?, test_agil=?, test_vel=? WHERE id=?''', 
+                                      (nm, ag, stt, ht, ws, al, ar, gl, jf2, jfl, jfr, jll, jlr, tr, ta, tv, e_id))
+                        conn.commit(); conn.close()
+                        backup_to_drive()
+                        st.success("Guardado"); st.rerun()
+            st.dataframe(all_gks.drop(columns=['user_id', 'notes']), use_container_width=True)
+
+        with tab_med:
+            if not all_gks.empty:
+                sel_gk_med = st.selectbox("Selecione Atleta para Boletim", all_gks['name'].tolist(), key="sel_med")
+                gid_med = int(all_gks[all_gks['name']==sel_gk_med].iloc[0]['id'])
+                
+                with st.expander("🚨 Reportar Nova Lesão"):
+                    with st.form("new_inj"):
+                        di = st.date_input("Data da Lesão")
+                        rw = st.number_input("Semanas de Paragem (Estimado)", 1, 52, 1)
+                        desc = st.text_area("Descrição da Lesão (ex: Entorse Tornozelo Dir.)")
+                        if st.form_submit_button("Registar Lesão"):
+                            conn = get_db_connection(); c = conn.cursor()
+                            c.execute("INSERT INTO injuries (gk_id, injury_date, recovery_weeks, description, active) VALUES (?,?,?,?,1)", (gid_med, di, rw, desc))
+                            c.execute("UPDATE goalkeepers SET status='Lesionado' WHERE id=?", (gid_med,))
+                            conn.commit(); conn.close(); backup_to_drive(); st.success("Lesão registada!"); st.rerun()
+                
+                conn = get_db_connection()
+                active = pd.read_sql_query("SELECT * FROM injuries WHERE gk_id=? AND active=1", conn, params=(gid_med,))
+                history = pd.read_sql_query("SELECT * FROM injuries WHERE gk_id=? AND active=0 ORDER BY injury_date DESC", conn, params=(gid_med,))
+                conn.close()
+                
+                if not active.empty:
+                    st.error(f"⚠️ {sel_gk_med} está lesionado.")
+                    for _, inj in active.iterrows():
+                        ret_date = datetime.strptime(inj['injury_date'], "%Y-%m-%d").date() + timedelta(weeks=inj['recovery_weeks'])
+                        st.write(f"**Lesão:** {inj['description']} ({inj['injury_date']})")
+                        st.write(f"**Regresso Previsto:** {ret_date}")
+                        if st.button("✅ Dar Alta Médica", key=f"heal_{inj['id']}"):
+                            conn = get_db_connection(); c = conn.cursor()
+                            c.execute("UPDATE injuries SET active=0 WHERE id=?", (inj['id'],))
+                            others = c.execute("SELECT count(*) FROM injuries WHERE gk_id=? AND active=1", (gid_med,)).fetchone()[0]
+                            if others == 0: c.execute("UPDATE goalkeepers SET status='Apto' WHERE id=?", (gid_med,))
+                            conn.commit(); conn.close(); backup_to_drive(); st.success("Recuperado!"); st.rerun()
+                else:
+                    st.success(f"{sel_gk_med} está Apto.")
+                
+                if not history.empty:
+                    st.markdown("#### Histórico Clínico")
+                    st.dataframe(history[['injury_date', 'description', 'recovery_weeks']])
+            else:
+                st.info("Crie atletas primeiro.")
 
     # --- 10. EXERCÍCIOS ---
     elif menu == "Exercícios":
@@ -1317,13 +1492,17 @@ def main_app():
             title = st.text_input("Título", value=d_tit)
             moms = ["Defesa de Baliza", "Defesa do Espaço", "Cruzamento", "Duelos", "Distribuição", "Passe Atrasado"]
             typs = ["Técnico", "Tático", "Técnico-Tático", "Físico", "Psicológico"]
+            
             c1, c2 = st.columns(2)
             moment = c1.selectbox("Momento", moms, index=moms.index(d_mom) if d_mom in moms else 0)
             train_type = c2.selectbox("Tipo", typs, index=typs.index(d_typ) if d_typ in typs else 0)
-            space = c3.text_input("Espaço", value=d_spa)
+            
+            space = st.text_input("Espaço", value=d_spa) 
+            
             c3, c4 = st.columns(2)
             objective = c3.text_input("Objetivo", value=d_obj)
             materials = c4.text_area("Material", value=d_mat, height=100)
+            
             desc = st.text_area("Descrição", value=d_desc, height=150)
             img = st.file_uploader("Imagem do Exercício (Upload)", type=['png','jpg'])
             
@@ -1373,7 +1552,7 @@ def main_app():
         else:
             for t in tabs: t.info("Vazio.")
 
-    # --- 11. BACKUPS & DADOS (V44 - DRIVE + MANUAL) ---
+    # --- 11. BACKUPS & DADOS ---
     elif menu == "💾 Backups & Dados":
         st.header("💾 Centro de Recuperação e Segurança")
         st.info("O sistema tenta sincronizar automaticamente com o Google Drive ao guardar dados.")
