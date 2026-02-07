@@ -1131,26 +1131,140 @@ def main_app():
                 else: st.info("Esta pasta está vazia.")
             else: st.info("Cria e seleciona uma pasta para começar a organizar os teus documentos.")
 
-    # --- 5. RELATÓRIOS ---
+    # --- 5. RELATÓRIOS & AVALIAÇÕES (NOVO CÓDIGO) ---
     elif menu == "Relatórios & Avaliações":
-        st.header("📝 Notas Técnicas")
-        tab_dia, tab_sem = st.tabs(["Relatório Diário", "Relatório Semanal"])
-        with tab_dia:
-            rep_date = st.date_input("Dia do Treino", datetime.today())
-            d_str = rep_date.strftime("%Y-%m-%d")
+        st.header("📝 Avaliação e Relatórios")
+        
+        # Criar abas para separar o dia a dia do resumo semanal
+        t_dia, t_sem = st.tabs(["Diário & Individual", "Semanal (Microciclo)"])
+        
+        # --- ABA 1: DIÁRIO ---
+        with t_dia:
+            rd = st.date_input("Dia do Treino", datetime.today())
+            d_str = rd.strftime("%Y-%m-%d")
+            
             conn = get_db_connection()
+            # 1. Verificar se houve treino nesse dia
             sess = pd.read_sql_query("SELECT * FROM sessions WHERE user_id=? AND start_date=?", conn, params=(user, d_str))
+            
             if not sess.empty:
-                s_data = sess.iloc[0]
-                if s_data.get('status') == 'Cancelado': st.error("⚠️ Este Treino foi Cancelado")
-                st.info(f"Treino: {s_data['title']}")
-                with st.form("daily_rep"):
-                    r_txt = st.text_area("Relatório do Treinador", value=s_data['report'] if s_data['report'] else "")
-                    if st.form_submit_button("Guardar Relatório"):
-                        c = conn.cursor()
-                        c.execute("UPDATE sessions SET report=? WHERE id=?", (r_txt, int(s_data['id'])))
-                        conn.commit(); conn.close(); backup_to_drive(); st.success("Guardado")
-            else: st.warning("Não há sessão para este dia.")
+                sd = sess.iloc[0]
+                st.info(f"Treino Identificado: {sd['title']} ({sd['type']})")
+                
+                # A. Relatório Geral do Treino
+                with st.form("drep"):
+                    st.markdown("###### 1. Relatório Geral")
+                    rt = st.text_area("Notas do Treinador", value=sd['report'] if sd['report'] else "", height=100)
+                    if st.form_submit_button("Guardar Relatório Geral"):
+                        conn.cursor().execute("UPDATE sessions SET report=? WHERE id=?", (rt, int(sd['id'])))
+                        conn.commit()
+                        backup_to_drive()
+                        st.success("Relatório Geral Guardado")
+
+                st.divider()
+                
+                # B. Avaliação Individual (Só aparece se houver presenças marcadas)
+                st.markdown("###### 2. Avaliação Individual")
+                
+                # Buscar quem esteve presente (tabela attendance)
+                pres = pd.read_sql_query("""
+                    SELECT g.id, g.name 
+                    FROM attendance a 
+                    JOIN goalkeepers g ON a.gk_id = g.id 
+                    WHERE a.session_id = ?
+                """, conn, params=(int(sd['id']),))
+                
+                if not pres.empty:
+                    with st.form("indiv"):
+                        st.caption("Avalia o desempenho de quem treinou (1-10)")
+                        
+                        # Loop para criar uma linha por atleta
+                        for _, gk in pres.iterrows():
+                            # Tenta buscar nota anterior se já existir
+                            prev = conn.execute("SELECT rating, notes FROM training_ratings WHERE date=? AND gk_id=?", (d_str, gk['id'])).fetchone()
+                            vr = prev[0] if prev else 5
+                            vn = prev[1] if prev else ""
+                            
+                            c1, c2 = st.columns([1, 3])
+                            # Slider para nota e Texto para obs
+                            nr = c1.slider(f"{gk['name']}", 1, 10, vr, key=f"rate_{gk['id']}")
+                            nn = c2.text_input(f"Obs {gk['name']}", value=vn, key=f"note_{gk['id']}")
+                            
+                            # Guardar temporariamente no session_state para processar no submit
+                            st.session_state[f"save_r_{gk['id']}"] = nr
+                            st.session_state[f"save_n_{gk['id']}"] = nn
+                            st.markdown("---")
+
+                        if st.form_submit_button("💾 Guardar Avaliações Individuais"):
+                            c = conn.cursor()
+                            for _, gk in pres.iterrows():
+                                nr = st.session_state[f"save_r_{gk['id']}"]
+                                nn = st.session_state[f"save_n_{gk['id']}"]
+                                
+                                # Verifica se já existe nota para fazer UPDATE ou INSERT
+                                exists = c.execute("SELECT id FROM training_ratings WHERE date=? AND gk_id=?", (d_str, gk['id'])).fetchone()
+                                if exists:
+                                    c.execute("UPDATE training_ratings SET rating=?, notes=? WHERE id=?", (nr, nn, exists[0]))
+                                else:
+                                    c.execute("INSERT INTO training_ratings (user_id, date, gk_id, rating, notes) VALUES (?,?,?,?,?)", (user, d_str, gk['id'], nr, nn))
+                            
+                            conn.commit()
+                            backup_to_drive()
+                            st.success("Avaliações registadas com sucesso!")
+                else:
+                    st.warning("⚠️ Ninguém marcado como 'Presente'. Vai a 'Gestão Semanal' > Planear Dias e marca as presenças primeiro.")
+            else:
+                st.warning("Não tens nenhuma sessão criada para este dia.")
+            conn.close()
+
+        # --- ABA 2: SEMANAL ---
+        with t_sem:
+            conn = get_db_connection()
+            micros = pd.read_sql_query("SELECT * FROM microcycles WHERE user_id=? ORDER BY start_date DESC", conn, params=(user,))
+            
+            if not micros.empty:
+                # Selectbox para escolher a semana
+                m_opts = [f"{m['title']} (Início: {m['start_date']})" for _, m in micros.iterrows()]
+                sel_m_str = st.selectbox("Selecionar Semana para Análise", m_opts)
+                
+                # Identificar a semana selecionada
+                sel_m = micros[micros.apply(lambda x: f"{x['title']} ({x['start_date']})" == sel_m_str, axis=1)].iloc[0]
+                
+                # Calcular datas da semana
+                s_dt = datetime.strptime(sel_m['start_date'], "%Y-%m-%d").date()
+                e_dt = s_dt + timedelta(days=6)
+                
+                st.info(f"Análise de **{s_dt}** a **{e_dt}**")
+                
+                # Tabela de Performance (Média das notas da semana)
+                st.subheader("📊 Performance Média Semanal")
+                avg_ratings = pd.read_sql_query("""
+                    SELECT g.name as Atleta, AVG(tr.rating) as 'Média Semanal', COUNT(tr.id) as 'Treinos Avaliados'
+                    FROM training_ratings tr
+                    JOIN goalkeepers g ON tr.gk_id = g.id
+                    WHERE tr.user_id = ? AND tr.date >= ? AND tr.date <= ?
+                    GROUP BY g.name
+                    ORDER BY 'Média Semanal' DESC
+                """, conn, params=(user, s_dt, e_dt))
+                
+                if not avg_ratings.empty:
+                    st.dataframe(avg_ratings.style.format({"Média Semanal": "{:.1f}"}), use_container_width=True)
+                else:
+                    st.caption("Ainda não fizeste avaliações individuais nesta semana.")
+                
+                st.divider()
+                
+                # Relatório Final do Microciclo
+                st.subheader("📝 Relatório Final do Microciclo")
+                with st.form("micro_rep_form"):
+                    mr_txt = st.text_area("Conclusões da Semana", value=sel_m['report'] if sel_m['report'] else "", height=200, placeholder="Ex: Boa evolução no jogo de pés, foco na próxima semana em cruzamentos...")
+                    if st.form_submit_button("Guardar Relatório Semanal"):
+                        conn.cursor().execute("UPDATE microcycles SET report=? WHERE id=?", (mr_txt, int(sel_m['id'])))
+                        conn.commit()
+                        backup_to_drive()
+                        st.success("Relatório da semana guardado!")
+            else:
+                st.info("Cria semanas no menu 'Gestão Semanal' primeiro.")
             conn.close()
 
     # --- 6. EVOLUÇÃO ---
